@@ -8,7 +8,12 @@ sys.path.append('/Users/mohamedhamdi/Work/Forex/ForexAnalyzer')
 from src.data.twelvedata_fetcher import TwelveDataFetcher
 
 # Your API key
-API_KEY = '24b8973fe3ce42acad781d9178c6f4a7'
+import os
+API_KEY = os.getenv('TWELVEDATA_API_KEY', '')
+if not API_KEY:
+    print("⚠️ Error: TWELVEDATA_API_KEY environment variable not set")
+    print("Set it with: export TWELVEDATA_API_KEY='your_key_here'")
+    exit(1)
 
 print("=" * 70)
 print("TESTING TWELVE DATA API")

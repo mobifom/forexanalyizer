@@ -53,15 +53,33 @@ class TwelveDataFetcher:
         'SI=F': 'XAG/USD',
     }
 
-    def __init__(self, api_key: str):
+    def __init__(self, api_key: str, min_request_interval: float = 10.0):
         """
         Initialize Twelve Data fetcher
 
         Args:
             api_key: Twelve Data API key (get from https://twelvedata.com)
+            min_request_interval: Minimum seconds between API calls (default: 10)
         """
         self.api_key = api_key
         self.session = requests.Session()
+        self.min_request_interval = min_request_interval
+        self.last_request_time = 0
+
+    def _rate_limit(self):
+        """
+        Enforce rate limiting between API calls
+        Ensures at least min_request_interval seconds between requests
+        """
+        current_time = time.time()
+        time_since_last_request = current_time - self.last_request_time
+
+        if time_since_last_request < self.min_request_interval:
+            sleep_time = self.min_request_interval - time_since_last_request
+            logger.info(f"⏱️  Rate limiting: waiting {sleep_time:.1f}s before next API call")
+            time.sleep(sleep_time)
+
+        self.last_request_time = time.time()
 
     def _convert_symbol(self, symbol: str) -> str:
         """
@@ -146,6 +164,9 @@ class TwelveDataFetcher:
 
             logger.info(f"Fetching {symbol} ({td_symbol}) {timeframe} from Twelve Data")
 
+            # Rate limit before making request
+            self._rate_limit()
+
             # Make request
             response = self.session.get(url, params=params, timeout=15)
             response.raise_for_status()
@@ -227,6 +248,9 @@ class TwelveDataFetcher:
                 'symbol': td_symbol,
                 'apikey': self.api_key
             }
+
+            # Rate limit before making request
+            self._rate_limit()
 
             response = self.session.get(url, params=params, timeout=10)
             response.raise_for_status()

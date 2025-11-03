@@ -59,7 +59,11 @@ Run this command to test if your API key works:
 python -c "
 from src.data.twelvedata_fetcher import TwelveDataFetcher
 
-api_key = '24b8973fe3ce42acad781d9178c6f4a7'
+import os
+api_key = os.getenv('TWELVEDATA_API_KEY', '')
+if not api_key:
+    print('⚠️ Set TWELVEDATA_API_KEY environment variable')
+    exit(1)
 fetcher = TwelveDataFetcher(api_key)
 
 if fetcher.check_api_status():

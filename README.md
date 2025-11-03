@@ -74,18 +74,23 @@ pip install -r requirements.txt
 3. **Get FREE API Key (Optional but Recommended)**
 
 Get a free Twelve Data API key for real-time forex data:
-- Sign up at: https://twelvedata.com/pricing
+- Sign up at: https://twelvedata.com/pricing (FREE - no credit card required)
 - Copy your API key from the dashboard
-- See [GET_FREE_API_KEY.md](GET_FREE_API_KEY.md) for detailed instructions
+- Free tier: 8 calls/minute, 800/day - Includes forex & metals!
 
 4. **Configure API Key**
 
-Edit `config/config.yaml`:
-```yaml
-twelvedata:
-  enabled: true
-  api_key: 'YOUR_API_KEY_HERE'
+Create a `.env` file from the template:
+```bash
+cp .env.example .env
 ```
+
+Edit `.env` and add your API key:
+```bash
+TWELVEDATA_API_KEY=your_api_key_here
+```
+
+**Security Note:** The `.env` file is gitignored and will NOT be committed to the repository.
 
 5. **Run the app**
 ```bash

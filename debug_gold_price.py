@@ -18,7 +18,12 @@ print("=" * 70)
 # Test 1: Twelve Data API directly
 print("\n1. TWELVE DATA (Real-time API):")
 try:
-    fetcher = TwelveDataFetcher(api_key='24b8973fe3ce42acad781d9178c6f4a7')
+    import os
+    api_key = os.getenv('TWELVEDATA_API_KEY', '')
+    if not api_key:
+        print("⚠️ TWELVEDATA_API_KEY not set in environment")
+        raise ValueError("Set TWELVEDATA_API_KEY environment variable")
+    fetcher = TwelveDataFetcher(api_key=api_key)
 
     # Get quote (current price)
     quote = fetcher.get_quote('XAU_USD')
@@ -62,7 +67,7 @@ try:
         cache_dir='data/cache',
         cache_duration_minutes=60,
         data_source='auto',
-        twelvedata_api_key='24b8973fe3ce42acad781d9178c6f4a7'
+        twelvedata_api_key=os.getenv('TWELVEDATA_API_KEY', '')
     )
 
     # Try XAU_USD (Oanda/Twelve Data format)

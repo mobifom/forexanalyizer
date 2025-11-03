@@ -45,11 +45,11 @@ After deployment, you need to add your API keys as secrets:
 
 ```toml
 # API Keys
-TWELVEDATA_API_KEY = "24b8973fe3ce42acad781d9178c6f4a7"
+TWELVEDATA_API_KEY = "your_api_key_here"
 
 # Optional: Add other configuration
 [api]
-twelvedata_key = "24b8973fe3ce42acad781d9178c6f4a7"
+twelvedata_key = "your_api_key_here"
 ```
 
 3. **Save and Reboot:**
@@ -81,7 +81,7 @@ https://mobifom-forexanalyizer-app-[random-id].streamlit.app
 
 1. **Remove API Key from config.yaml:**
    - Open `config/config.yaml`
-   - Change `api_key: "24b8973fe3ce42acad781d9178c6f4a7"`
+   - Verify `api_key: ""` is empty
    - To `api_key: ""`
    - Commit this change
 

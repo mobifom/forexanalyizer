@@ -27,7 +27,7 @@ After deployment:
 3. Add this in TOML format:
 
 ```toml
-TWELVEDATA_API_KEY = "24b8973fe3ce42acad781d9178c6f4a7"
+TWELVEDATA_API_KEY = "your_api_key_here"
 ```
 
 4. Click "**Save**"

@@ -144,7 +144,7 @@ Check config.yaml:
 ```yaml
 twelvedata:
   enabled: true  # ← Must be true
-  api_key: '24b8973fe3ce42acad781d9178c6f4a7'  # ← Your key
+  api_key: ''  # Leave empty - use environment variable TWELVEDATA_API_KEY instead
 ```
 
 ## Summary

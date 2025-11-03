@@ -46,7 +46,7 @@ Before pushing, verify your API key is NOT in the repository:
 
 ```bash
 # Check if API key is in tracked files
-git grep -i "24b8973fe3ce42acad781d9178c6f4a7"
+git grep -i "your_api_key"  # Search for any remaining API keys
 ```
 
 **If the API key appears:**
@@ -63,7 +63,7 @@ git grep -i "24b8973fe3ce42acad781d9178c6f4a7"
 
 3. **Use environment variable instead:**
    ```bash
-   export TWELVEDATA_API_KEY='24b8973fe3ce42acad781d9178c6f4a7'
+   export TWELVEDATA_API_KEY='your_api_key_here'
    ```
 
 4. **Update the commit:**

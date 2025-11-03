@@ -71,12 +71,13 @@ data:
 # Twelve Data API Settings (RECOMMENDED - Real-time forex data!)
 twelvedata:
   enabled: true              # Set to true to use Twelve Data for real-time forex
-  api_key: '24b8973fe3ce42acad781d9178c6f4a7'                 # Your Twelve Data API key (FREE - 8 calls/min, 800/day)
+  api_key: ''                # Leave empty - Set TWELVEDATA_API_KEY environment variable instead
   # ⭐ SUPPORTS FOREX & METALS ON FREE TIER! (Unlike Finnhub)
   # To get API key:
   # 1. Sign up at https://twelvedata.com/pricing (FREE - no credit card!)
   # 2. Copy your API key from the dashboard
-  # 3. Paste it here or set TWELVEDATA_API_KEY environment variable
+  # 3. Set environment variable: export TWELVEDATA_API_KEY='your_key_here'
+  # 4. Or add to .env file: TWELVEDATA_API_KEY=your_key_here
   # Free tier: 8 API calls/minute, 800/day - Includes forex & metals!
 
 # Finnhub API Settings (Stocks only on free tier - Forex requires premium $99/month)

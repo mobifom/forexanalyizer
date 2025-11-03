@@ -71,9 +71,18 @@ class ForexDataFetcher:
         # Initialize Twelve Data fetcher if requested (BEST for free forex!)
         self.twelvedata_fetcher = None
         if self.data_source in ['twelvedata', 'auto'] and TWELVEDATA_AVAILABLE:
-            if twelvedata_api_key:
+            # Try to get API key from Streamlit secrets first (for cloud deployment)
+            api_key_to_use = twelvedata_api_key
+            if not api_key_to_use:
                 try:
-                    self.twelvedata_fetcher = TwelveDataFetcher(api_key=twelvedata_api_key)
+                    import streamlit as st
+                    api_key_to_use = st.secrets.get("TWELVEDATA_API_KEY", "")
+                except Exception:
+                    pass  # Streamlit secrets not available (local dev)
+
+            if api_key_to_use:
+                try:
+                    self.twelvedata_fetcher = TwelveDataFetcher(api_key=api_key_to_use)
                     # Test API connection
                     if self.twelvedata_fetcher.check_api_status():
                         logger.info("✅ Twelve Data API initialized - Real-time forex data available!")

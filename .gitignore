@@ -75,3 +75,6 @@ htmlcov/
 *.swp
 tmp/
 temp/
+
+# User credentials (SECURITY - never commit!)
+config/users.yaml

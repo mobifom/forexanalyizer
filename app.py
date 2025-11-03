@@ -18,6 +18,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 from src.forex_analyzer import ForexAnalyzer
 from src.data.data_fetcher import ForexDataFetcher
 from src.indicators.technical_indicators import TechnicalIndicators
+from src.auth.authentication import Authenticator, Permissions
 
 # Page configuration
 st.set_page_config(
@@ -60,6 +61,10 @@ st.markdown("""
     }
 </style>
 """, unsafe_allow_html=True)
+
+# Initialize authentication
+if 'auth' not in st.session_state:
+    st.session_state.auth = Authenticator()
 
 # Initialize session state
 if 'analyzer' not in st.session_state:
@@ -173,6 +178,17 @@ def display_signal_badge(signal, confidence):
 
 def main():
     """Main application"""
+
+    # Get authenticator from session state
+    auth = st.session_state.auth
+
+    # Check if user is authenticated
+    if not auth.is_authenticated():
+        auth.render_login_page()
+        return
+
+    # Render user info in sidebar
+    auth.render_user_info()
 
     # Header
     st.markdown('<h1 class="main-header">📈 Forex Analyzer Pro</h1>',
@@ -367,9 +383,13 @@ def main():
         # Analyze button
         analyze_button = st.button("🔍 Analyze", type="primary", use_container_width=True)
 
-        # Refresh Data button
-        refresh_button = st.button("🔄 Refresh Latest Data", use_container_width=True,
-                                   help="Clear cache and fetch fresh data from market")
+        # Refresh Data button (admin only)
+        if auth.has_permission(Permissions.REFRESH_DATA):
+            refresh_button = st.button("🔄 Refresh Latest Data", use_container_width=True,
+                                       help="Clear cache and fetch fresh data from market")
+        else:
+            st.info("🔒 Data refresh requires admin privileges")
+            refresh_button = False
 
         st.divider()
 
@@ -377,8 +397,13 @@ def main():
         st.subheader("Quick Actions")
         if st.button("📊 Scan Multiple Pairs", use_container_width=True):
             st.session_state.page = 'scanner'
-        if st.button("🤖 Train ML Model", use_container_width=True):
-            st.session_state.page = 'training'
+
+        # Train ML Model button (admin only)
+        if auth.has_permission(Permissions.TRAIN_MODEL):
+            if st.button("🤖 Train ML Model", use_container_width=True):
+                st.session_state.page = 'training'
+        else:
+            st.button("🔒 Train ML Model (Admin Only)", use_container_width=True, disabled=True)
 
         st.divider()
         st.caption(f"Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")

@@ -11,8 +11,27 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from src.forex_analyzer import ForexAnalyzer
+from src.auth.authentication import Authenticator, Permissions
 
 st.set_page_config(page_title="Multi-Pair Scanner", page_icon="📊", layout="wide")
+
+# Check authentication
+if 'auth' not in st.session_state:
+    st.session_state.auth = Authenticator()
+
+auth = st.session_state.auth
+
+if not auth.is_authenticated():
+    st.error("🔒 Please login first")
+    st.info("Return to the main page to login")
+    st.stop()
+
+if not auth.has_permission(Permissions.SCAN_PAIRS):
+    st.error("🔒 You don't have permission to scan pairs")
+    st.stop()
+
+# Render user info in sidebar
+auth.render_user_info()
 
 st.title("📊 Multi-Pair Scanner")
 st.markdown("Scan multiple assets simultaneously to find the best trading opportunities")

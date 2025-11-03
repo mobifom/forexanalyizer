@@ -10,8 +10,28 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from src.forex_analyzer import ForexAnalyzer
+from src.auth.authentication import Authenticator, Permissions
 
 st.set_page_config(page_title="Model Training", page_icon="🤖", layout="wide")
+
+# Check authentication
+if 'auth' not in st.session_state:
+    st.session_state.auth = Authenticator()
+
+auth = st.session_state.auth
+
+if not auth.is_authenticated():
+    st.error("🔒 Please login first")
+    st.info("Return to the main page to login")
+    st.stop()
+
+if not auth.has_permission(Permissions.TRAIN_MODEL):
+    st.error("🔒 Model training requires admin privileges")
+    st.info("Only administrators can train machine learning models")
+    st.stop()
+
+# Render user info in sidebar
+auth.render_user_info()
 
 st.title("🤖 ML Model Training")
 st.markdown("Train machine learning models on historical forex and metals data")

@@ -200,6 +200,13 @@ def main():
         st.success("✅ Real-time data enabled (Twelve Data API) - 10 minute auto-refresh")
     else:
         st.warning("⚠️ Using delayed data (Yahoo Finance) - Get real-time data: https://twelvedata.com/pricing")
+        with st.expander("Why am I seeing Yahoo Finance?"):
+            st.write("**Possible reasons:**")
+            st.write("1. 🔄 **Session state cached** - Restart Streamlit to reload configuration")
+            st.write("2. 🔑 **API key not configured** - Check `config/config.yaml` line 74")
+            st.write("3. ⚠️ **API rate limit exceeded** - Free tier: 8 calls/min, 800/day")
+            st.write("4. 🌐 **Network/firewall issue** - Check internet connection")
+            st.write("\n**Quick fix:** Stop Streamlit (Ctrl+C) and run again: `streamlit run app.py`")
 
     # Sidebar
     with st.sidebar:

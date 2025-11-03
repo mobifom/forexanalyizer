@@ -1,0 +1,97 @@
+# Forex Forecasting App Configuration
+
+# Timeframes to analyze
+timeframes:
+  - '1d'   # Daily
+  - '4h'   # 4 Hour
+  - '1h'   # 1 Hour
+  - '15m'  # 15 Minutes
+
+# Timeframe weights for confluence (higher = more important)
+timeframe_weights:
+  '1d': 0.4
+  '4h': 0.3
+  '1h': 0.2
+  '15m': 0.1
+
+# Currency pairs and commodities to analyze
+currency_pairs:
+  - 'EURUSD=X'   # Euro / US Dollar
+  - 'GBPUSD=X'   # British Pound / US Dollar
+  - 'USDJPY=X'   # US Dollar / Japanese Yen
+  - 'AUDUSD=X'   # Australian Dollar / US Dollar
+  - 'XAU_USD'    # Gold Spot (Oanda) - fallback to GC=F (yfinance)
+  - 'XAG_USD'    # Silver Spot (Oanda) - fallback to SI=F (yfinance)
+
+# Technical Indicators Settings
+indicators:
+  ma_periods: [20, 50, 200]
+  ema_periods: [12, 26, 50]
+  rsi_period: 14
+  rsi_overbought: 70
+  rsi_oversold: 30
+  macd_fast: 12
+  macd_slow: 26
+  macd_signal: 9
+  stochastic_k: 14
+  stochastic_d: 3
+  atr_period: 14
+  bollinger_period: 20
+  bollinger_std: 2
+
+# Signal Confluence Settings
+confluence:
+  min_timeframes_agree: 1  # Minimum timeframes that must agree (2/4 = 50%)
+  min_confidence: 0.4      # Minimum confidence score (0-1) - 50%
+
+# ML Model Settings
+ml_model:
+  train_test_split: 0.2
+  lookback_periods: 100
+  n_estimators: 100
+  max_depth: 10
+  min_samples_split: 5
+
+# Risk Management
+risk_management:
+  risk_per_trade: 0.02        # 2% of capital per trade
+  atr_multiplier: 2.0         # Stop loss = ATR * multiplier
+  max_drawdown: 0.15          # Maximum 15% drawdown
+  min_risk_reward: 1.5        # Minimum risk:reward ratio
+
+# Data Settings
+data:
+  historical_days: 365        # Days of historical data to fetch
+  cache_enabled: true
+  cache_duration_minutes: 10  # 10 minutes auto-refresh (manual refresh bypasses cache)
+  data_source: 'auto'         # Options: 'twelvedata', 'finnhub', 'yfinance', 'oanda', 'auto'
+                              # 'auto' tries Twelve Data first (if configured), then Oanda, falls back to yfinance
+                              # Use 'yfinance' if you don't have API keys
+
+# Twelve Data API Settings (RECOMMENDED - Real-time forex data!)
+twelvedata:
+  enabled: true              # Set to true to use Twelve Data for real-time forex
+  api_key: '24b8973fe3ce42acad781d9178c6f4a7'                 # Your Twelve Data API key (FREE - 8 calls/min, 800/day)
+  # ⭐ SUPPORTS FOREX & METALS ON FREE TIER! (Unlike Finnhub)
+  # To get API key:
+  # 1. Sign up at https://twelvedata.com/pricing (FREE - no credit card!)
+  # 2. Copy your API key from the dashboard
+  # 3. Paste it here or set TWELVEDATA_API_KEY environment variable
+  # Free tier: 8 API calls/minute, 800/day - Includes forex & metals!
+
+# Finnhub API Settings (Stocks only on free tier - Forex requires premium $99/month)
+finnhub:
+  enabled: false              # Note: Free tier does NOT support forex
+  api_key: ''                 # Only useful for stocks, not forex
+  # Free tier limitations: US stocks only, forex requires premium ($99/month)
+
+# Oanda API Settings (only required if using Oanda)
+oanda:
+  enabled: false              # Set to true to use Oanda
+  api_key: ''                 # Your Oanda API key (get from Oanda dashboard)
+  account_type: 'practice'    # 'practice' for demo, 'live' for real account
+  # To get API key:
+  # 1. Sign up at https://www.oanda.com/
+  # 2. Go to "Manage API Access" in your account
+  # 3. Generate a Personal Access Token
+  # 4. Paste it here or set OANDA_API_KEY environment variable

@@ -1,0 +1,13 @@
+# Optional Dependencies for Advanced Features
+
+# MetaTrader5 Integration (Windows only)
+# Uncomment to install on Windows systems
+# MetaTrader5>=5.0.45
+
+# Additional Visualization Libraries
+seaborn>=0.12.0
+plotly>=5.17.0
+
+# Jupyter Notebook Support
+jupyter>=1.0.0
+ipywidgets>=8.0.0

@@ -1,0 +1,525 @@
+{
+  "approved": true,
+  "signal": "BUY",
+  "confidence": 0.75,
+  "entry_price": 1.154334545135498,
+  "generated_at": "2025-11-03T08:37:36.552482",
+  "timeframe_plans": {
+    "15m": {
+      "timeframe": "15m",
+      "timeframe_description": "15 minutes",
+      "entry_points": {
+        "entry_1_immediate": {
+          "price": 1.15433,
+          "description": "Market entry - Enter now at current price",
+          "urgency": "IMMEDIATE",
+          "type": "MARKET ORDER"
+        },
+        "entry_2_pullback": {
+          "price": 1.15415,
+          "description": "Wait for minor pullback - Better entry",
+          "urgency": "LIMIT ORDER",
+          "type": "LIMIT ORDER"
+        },
+        "entry_3_best": {
+          "price": 1.15217,
+          "description": "Best entry near support/BB Lower - Most favorable",
+          "urgency": "LIMIT ORDER",
+          "type": "LIMIT ORDER"
+        }
+      },
+      "stop_losses": {
+        "tight_1atr": {
+          "price": 1.15396,
+          "description": "Tight stop - Quick exit if wrong",
+          "risk_pct": 0.03,
+          "atr_multiple": 1
+        },
+        "standard_2atr": {
+          "price": 1.15359,
+          "description": "Standard stop - Recommended (allows normal volatility)",
+          "risk_pct": 0.06,
+          "atr_multiple": 2,
+          "recommended": true
+        },
+        "wide_3atr": {
+          "price": 1.15322,
+          "description": "Wide stop - More breathing room",
+          "risk_pct": 0.1,
+          "atr_multiple": 3
+        },
+        "percentage_2pct": {
+          "price": 1.13125,
+          "description": "2% fixed stop loss",
+          "risk_pct": 2.0,
+          "type": "percentage"
+        },
+        "percentage_3pct": {
+          "price": 1.1197,
+          "description": "3% fixed stop loss",
+          "risk_pct": 3.0,
+          "type": "percentage"
+        }
+      },
+      "take_profits": {
+        "tp1_quick": {
+          "price": 1.15471,
+          "description": "Quick profit - Scalp (Close 25% position)",
+          "gain_pct": 0.03,
+          "atr_multiple": 1,
+          "position_close_pct": 25
+        },
+        "tp2_conservative": {
+          "price": 1.15508,
+          "description": "Conservative target (Close 25% position)",
+          "gain_pct": 0.06,
+          "atr_multiple": 2,
+          "position_close_pct": 25,
+          "recommended": true
+        },
+        "tp3_moderate": {
+          "price": 1.15545,
+          "description": "Moderate target (Close 25% position)",
+          "gain_pct": 0.1,
+          "atr_multiple": 3,
+          "position_close_pct": 25
+        },
+        "tp4_aggressive": {
+          "price": 1.15619,
+          "description": "Aggressive target (Close remaining 25%)",
+          "gain_pct": 0.16,
+          "atr_multiple": 5,
+          "position_close_pct": 25
+        }
+      },
+      "position_sizing": {
+        "position_size_lots": 2.686203837275571,
+        "position_size_units": 268620.3837275571,
+        "risk_amount": 200.0,
+        "risk_percentage": 2.0
+      },
+      "risk_reward_ratios": {
+        "tp1_quick": 0.5,
+        "tp2_conservative": 1.0,
+        "tp3_moderate": 1.5,
+        "tp4_aggressive": 2.49
+      },
+      "expected_execution": {
+        "duration_minutes": 300,
+        "duration_readable": "5 hours",
+        "estimated_completion": "2025-11-03T13:37:36.552652",
+        "estimated_completion_readable": "2025-11-03 13:37:36",
+        "candles_to_target": 20
+      },
+      "trading_strategy": {
+        "style": "Scalping",
+        "holding_period": "15 minutes to 2 hours",
+        "description": "Quick in and out trades, capture small moves",
+        "monitoring": "Requires active monitoring",
+        "suitable_for": "Day traders, active traders"
+      },
+      "current_indicators": {
+        "RSI": 75.01027,
+        "MACD": -7e-05,
+        "MACD_Signal": -0.00034,
+        "MACD_Hist": 0.00027,
+        "Stoch_K": 100.0,
+        "Stoch_D": 100.0,
+        "ATR": 0.00037,
+        "MA_20": 1.15328,
+        "MA_50": 1.15465,
+        "MA_200": 1.15804,
+        "BB_Upper": 1.1544,
+        "BB_Middle": 1.15328,
+        "BB_Lower": 1.15217
+      }
+    },
+    "1h": {
+      "timeframe": "1h",
+      "timeframe_description": "1 hour",
+      "entry_points": {
+        "entry_1_immediate": {
+          "price": 1.15433,
+          "description": "Market entry - Enter now at current price",
+          "urgency": "IMMEDIATE",
+          "type": "MARKET ORDER"
+        },
+        "entry_2_pullback": {
+          "price": 1.15373,
+          "description": "Wait for minor pullback - Better entry",
+          "urgency": "LIMIT ORDER",
+          "type": "LIMIT ORDER"
+        },
+        "entry_3_best": {
+          "price": 1.1518,
+          "description": "Best entry near support/BB Lower - Most favorable",
+          "urgency": "LIMIT ORDER",
+          "type": "LIMIT ORDER"
+        }
+      },
+      "stop_losses": {
+        "tight_1atr": {
+          "price": 1.15313,
+          "description": "Tight stop - Quick exit if wrong",
+          "risk_pct": 0.1,
+          "atr_multiple": 1
+        },
+        "standard_2atr": {
+          "price": 1.15193,
+          "description": "Standard stop - Recommended (allows normal volatility)",
+          "risk_pct": 0.21,
+          "atr_multiple": 2,
+          "recommended": true
+        },
+        "wide_3atr": {
+          "price": 1.15073,
+          "description": "Wide stop - More breathing room",
+          "risk_pct": 0.31,
+          "atr_multiple": 3
+        },
+        "percentage_2pct": {
+          "price": 1.13125,
+          "description": "2% fixed stop loss",
+          "risk_pct": 2.0,
+          "type": "percentage"
+        },
+        "percentage_3pct": {
+          "price": 1.1197,
+          "description": "3% fixed stop loss",
+          "risk_pct": 3.0,
+          "type": "percentage"
+        }
+      },
+      "take_profits": {
+        "tp1_quick": {
+          "price": 1.15553,
+          "description": "Quick profit - Scalp (Close 25% position)",
+          "gain_pct": 0.1,
+          "atr_multiple": 1,
+          "position_close_pct": 25
+        },
+        "tp2_conservative": {
+          "price": 1.15674,
+          "description": "Conservative target (Close 25% position)",
+          "gain_pct": 0.21,
+          "atr_multiple": 2,
+          "position_close_pct": 25,
+          "recommended": true
+        },
+        "tp3_moderate": {
+          "price": 1.15794,
+          "description": "Moderate target (Close 25% position)",
+          "gain_pct": 0.31,
+          "atr_multiple": 3,
+          "position_close_pct": 25
+        },
+        "tp4_aggressive": {
+          "price": 1.16034,
+          "description": "Aggressive target (Close remaining 25%)",
+          "gain_pct": 0.52,
+          "atr_multiple": 5,
+          "position_close_pct": 25
+        }
+      },
+      "position_sizing": {
+        "position_size_lots": 0.8317581443883609,
+        "position_size_units": 83175.8144388361,
+        "risk_amount": 200.0,
+        "risk_percentage": 2.0
+      },
+      "risk_reward_ratios": {
+        "tp1_quick": 0.5,
+        "tp2_conservative": 1.0,
+        "tp3_moderate": 1.5,
+        "tp4_aggressive": 2.5
+      },
+      "expected_execution": {
+        "duration_minutes": 1440,
+        "duration_readable": "1 days",
+        "estimated_completion": "2025-11-04T08:37:36.552907",
+        "estimated_completion_readable": "2025-11-04 08:37:36",
+        "candles_to_target": 24
+      },
+      "trading_strategy": {
+        "style": "Intraday Trading",
+        "holding_period": "1 hour to 8 hours",
+        "description": "Intraday swings, close before end of day",
+        "monitoring": "Check every 1-2 hours",
+        "suitable_for": "Day traders, part-time traders"
+      },
+      "current_indicators": {
+        "RSI": 36.22252,
+        "MACD": -0.00133,
+        "MACD_Signal": -0.0013,
+        "MACD_Hist": -3e-05,
+        "Stoch_K": 33.22629,
+        "Stoch_D": 24.52133,
+        "ATR": 0.0012,
+        "MA_20": 1.15554,
+        "MA_50": 1.15792,
+        "MA_200": 1.16159,
+        "BB_Upper": 1.15929,
+        "BB_Middle": 1.15554,
+        "BB_Lower": 1.1518
+      }
+    },
+    "4h": {
+      "timeframe": "4h",
+      "timeframe_description": "4 hours",
+      "entry_points": {
+        "entry_1_immediate": {
+          "price": 1.15433,
+          "description": "Market entry - Enter now at current price",
+          "urgency": "IMMEDIATE",
+          "type": "MARKET ORDER"
+        },
+        "entry_2_pullback": {
+          "price": 1.15296,
+          "description": "Wait for minor pullback - Better entry",
+          "urgency": "LIMIT ORDER",
+          "type": "LIMIT ORDER"
+        },
+        "entry_3_best": {
+          "price": 1.15152,
+          "description": "Best entry near support/BB Lower - Most favorable",
+          "urgency": "LIMIT ORDER",
+          "type": "LIMIT ORDER"
+        }
+      },
+      "stop_losses": {
+        "tight_1atr": {
+          "price": 1.15158,
+          "description": "Tight stop - Quick exit if wrong",
+          "risk_pct": 0.24,
+          "atr_multiple": 1
+        },
+        "standard_2atr": {
+          "price": 1.14883,
+          "description": "Standard stop - Recommended (allows normal volatility)",
+          "risk_pct": 0.48,
+          "atr_multiple": 2,
+          "recommended": true
+        },
+        "wide_3atr": {
+          "price": 1.14608,
+          "description": "Wide stop - More breathing room",
+          "risk_pct": 0.72,
+          "atr_multiple": 3
+        },
+        "percentage_2pct": {
+          "price": 1.13125,
+          "description": "2% fixed stop loss",
+          "risk_pct": 2.0,
+          "type": "percentage"
+        },
+        "percentage_3pct": {
+          "price": 1.1197,
+          "description": "3% fixed stop loss",
+          "risk_pct": 3.0,
+          "type": "percentage"
+        }
+      },
+      "take_profits": {
+        "tp1_quick": {
+          "price": 1.15709,
+          "description": "Quick profit - Scalp (Close 25% position)",
+          "gain_pct": 0.24,
+          "atr_multiple": 1,
+          "position_close_pct": 25
+        },
+        "tp2_conservative": {
+          "price": 1.15984,
+          "description": "Conservative target (Close 25% position)",
+          "gain_pct": 0.48,
+          "atr_multiple": 2,
+          "position_close_pct": 25,
+          "recommended": true
+        },
+        "tp3_moderate": {
+          "price": 1.16259,
+          "description": "Moderate target (Close 25% position)",
+          "gain_pct": 0.72,
+          "atr_multiple": 3,
+          "position_close_pct": 25
+        },
+        "tp4_aggressive": {
+          "price": 1.1681,
+          "description": "Aggressive target (Close remaining 25%)",
+          "gain_pct": 1.19,
+          "atr_multiple": 5,
+          "position_close_pct": 25
+        }
+      },
+      "position_sizing": {
+        "position_size_lots": 0.3633361069386613,
+        "position_size_units": 36333.61069386613,
+        "risk_amount": 200.0,
+        "risk_percentage": 2.0
+      },
+      "risk_reward_ratios": {
+        "tp1_quick": 0.5,
+        "tp2_conservative": 1.0,
+        "tp3_moderate": 1.5,
+        "tp4_aggressive": 2.5
+      },
+      "expected_execution": {
+        "duration_minutes": 4320,
+        "duration_readable": "3 days",
+        "estimated_completion": "2025-11-06T08:37:36.553122",
+        "estimated_completion_readable": "2025-11-06 08:37:36",
+        "candles_to_target": 18
+      },
+      "trading_strategy": {
+        "style": "Swing Trading",
+        "holding_period": "4 hours to 3 days",
+        "description": "Capture medium-term trends",
+        "monitoring": "Check 2-3 times per day",
+        "suitable_for": "Swing traders, working professionals"
+      },
+      "current_indicators": {
+        "RSI": 20.06969,
+        "MACD": -0.00243,
+        "MACD_Signal": -0.00171,
+        "MACD_Hist": -0.00072,
+        "Stoch_K": 12.94395,
+        "Stoch_D": 9.28245,
+        "ATR": 0.00275,
+        "MA_20": 1.15994,
+        "MA_50": 1.16146,
+        "MA_200": 1.16811,
+        "BB_Upper": 1.16836,
+        "BB_Middle": 1.15994,
+        "BB_Lower": 1.15152
+      }
+    },
+    "1d": {
+      "timeframe": "1d",
+      "timeframe_description": "1 day",
+      "entry_points": {
+        "entry_1_immediate": {
+          "price": 1.15433,
+          "description": "Market entry - Enter now at current price",
+          "urgency": "IMMEDIATE",
+          "type": "MARKET ORDER"
+        },
+        "entry_2_pullback": {
+          "price": 1.1513,
+          "description": "Wait for minor pullback - Better entry",
+          "urgency": "LIMIT ORDER",
+          "type": "LIMIT ORDER"
+        },
+        "entry_3_best": {
+          "price": 1.1534,
+          "description": "Best entry near support/BB Lower - Most favorable",
+          "urgency": "LIMIT ORDER",
+          "type": "LIMIT ORDER"
+        }
+      },
+      "stop_losses": {
+        "tight_1atr": {
+          "price": 1.14827,
+          "description": "Tight stop - Quick exit if wrong",
+          "risk_pct": 0.53,
+          "atr_multiple": 1
+        },
+        "standard_2atr": {
+          "price": 1.1422,
+          "description": "Standard stop - Recommended (allows normal volatility)",
+          "risk_pct": 1.05,
+          "atr_multiple": 2,
+          "recommended": true
+        },
+        "wide_3atr": {
+          "price": 1.13613,
+          "description": "Wide stop - More breathing room",
+          "risk_pct": 1.58,
+          "atr_multiple": 3
+        },
+        "percentage_2pct": {
+          "price": 1.13125,
+          "description": "2% fixed stop loss",
+          "risk_pct": 2.0,
+          "type": "percentage"
+        },
+        "percentage_3pct": {
+          "price": 1.1197,
+          "description": "3% fixed stop loss",
+          "risk_pct": 3.0,
+          "type": "percentage"
+        }
+      },
+      "take_profits": {
+        "tp1_quick": {
+          "price": 1.1604,
+          "description": "Quick profit - Scalp (Close 25% position)",
+          "gain_pct": 0.53,
+          "atr_multiple": 1,
+          "position_close_pct": 25
+        },
+        "tp2_conservative": {
+          "price": 1.16647,
+          "description": "Conservative target (Close 25% position)",
+          "gain_pct": 1.05,
+          "atr_multiple": 2,
+          "position_close_pct": 25,
+          "recommended": true
+        },
+        "tp3_moderate": {
+          "price": 1.17253,
+          "description": "Moderate target (Close 25% position)",
+          "gain_pct": 1.58,
+          "atr_multiple": 3,
+          "position_close_pct": 25
+        },
+        "tp4_aggressive": {
+          "price": 1.18467,
+          "description": "Aggressive target (Close remaining 25%)",
+          "gain_pct": 2.63,
+          "atr_multiple": 5,
+          "position_close_pct": 25
+        }
+      },
+      "position_sizing": {
+        "position_size_lots": 0.16481870376412175,
+        "position_size_units": 16481.870376412175,
+        "risk_amount": 200.0,
+        "risk_percentage": 2.0
+      },
+      "risk_reward_ratios": {
+        "tp1_quick": 0.5,
+        "tp2_conservative": 1.0,
+        "tp3_moderate": 1.5,
+        "tp4_aggressive": 2.5
+      },
+      "expected_execution": {
+        "duration_minutes": 14400,
+        "duration_readable": "10 days",
+        "estimated_completion": "2025-11-13T08:37:36.553313",
+        "estimated_completion_readable": "2025-11-13 08:37:36",
+        "candles_to_target": 10
+      },
+      "trading_strategy": {
+        "style": "Position Trading",
+        "holding_period": "1 day to several weeks",
+        "description": "Long-term trends, larger profit targets",
+        "monitoring": "Check once per day",
+        "suitable_for": "Position traders, long-term investors"
+      },
+      "current_indicators": {
+        "RSI": 46.02942,
+        "MACD": -0.0028,
+        "MACD_Signal": -0.00221,
+        "MACD_Hist": -0.00059,
+        "Stoch_K": 5.00195,
+        "Stoch_D": 20.1751,
+        "ATR": 0.00607,
+        "MA_20": 1.1623,
+        "MA_50": 1.16824,
+        "MA_200": 1.13107,
+        "BB_Upper": 1.17121,
+        "BB_Middle": 1.1623,
+        "BB_Lower": 1.1534
+      }
+    }
+  }
+}

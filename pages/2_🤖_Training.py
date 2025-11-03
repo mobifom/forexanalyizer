@@ -6,6 +6,10 @@ Train machine learning models on historical data
 import streamlit as st
 import sys
 import os
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 

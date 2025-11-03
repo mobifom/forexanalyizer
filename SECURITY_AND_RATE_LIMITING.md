@@ -92,7 +92,7 @@ When making API calls:
 
 2. **Edit .env and add your API key:**
    ```bash
-   TWELVEDATA_API_KEY=24b8973fe3ce42acad781d9178c6f4a7
+   TWELVEDATA_API_KEY=your_api_key_here
    ```
 
 3. **Run the app:**
@@ -106,7 +106,7 @@ When making API calls:
 2. **Navigate to Secrets**
 3. **Add in TOML format:**
    ```toml
-   TWELVEDATA_API_KEY = "24b8973fe3ce42acad781d9178c6f4a7"
+   TWELVEDATA_API_KEY = "your_api_key_here"
    ```
 4. **Save and reboot** the app
 
@@ -115,8 +115,8 @@ When making API calls:
 ### Check API Key is Not in Git
 
 ```bash
-# This should return NO results
-git grep -i "24b8973fe3ce42acad781d9178c6f4a7"
+# This should return NO results (or only in documentation as examples)
+git grep -i "your_api_key"
 
 # Check what files would be committed
 git status
@@ -142,7 +142,7 @@ INFO:src.data.twelvedata_fetcher:⏱️  Rate limiting: waiting 10.0s before nex
 
 ```bash
 # Test with environment variable
-export TWELVEDATA_API_KEY='24b8973fe3ce42acad781d9178c6f4a7'
+export TWELVEDATA_API_KEY='your_api_key_here'
 python test_twelvedata.py
 
 # Should show: ✅ API key loaded from environment

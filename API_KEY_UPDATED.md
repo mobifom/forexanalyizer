@@ -2,7 +2,7 @@
 
 ## New API Key Status
 
-**API Key:** `050ff9ccf91a4197a0e40a49d48219f8`
+**API Key:** Updated in `.env` file
 
 **Status:** ✅ **WORKING PERFECTLY**
 
@@ -20,11 +20,11 @@
 
 **Change:**
 ```bash
-# Old (rate limited)
-TWELVEDATA_API_KEY=24b8973fe3ce42acad781d9178c6f4a7
+# Old API key (rate limited)
+TWELVEDATA_API_KEY=old_key_here
 
-# New (working)
-TWELVEDATA_API_KEY=050ff9ccf91a4197a0e40a49d48219f8
+# New API key (working)
+TWELVEDATA_API_KEY=your_new_key_here
 ```
 
 ## Verification Results
@@ -138,7 +138,7 @@ When deploying to Streamlit Cloud, update the secrets:
 1. Go to App Settings → Secrets
 2. Update to:
    ```toml
-   TWELVEDATA_API_KEY = "050ff9ccf91a4197a0e40a49d48219f8"
+   TWELVEDATA_API_KEY = "your_new_api_key_here"
    ```
 3. Save and reboot
 
@@ -146,7 +146,7 @@ When deploying to Streamlit Cloud, update the secrets:
 
 | Item | Status |
 |------|--------|
-| New API Key | ✅ 050ff9ccf9...19f8 |
+| New API Key | ✅ Updated in .env |
 | API Connection | ✅ Working |
 | Real-time Data | ✅ Enabled |
 | Rate Limiting | ✅ Active (10s) |
@@ -169,8 +169,6 @@ streamlit run app.py
 
 **Updated:** 2025-11-04
 
-**Old API Key:** 24b8973fe3ce42acad781d9178c6f4a7 (rate limited)
+**Status:** API key updated and working ✅
 
-**New API Key:** 050ff9ccf91a4197a0e40a49d48219f8 (working ✅)
-
-**Status:** Ready for use!
+**Ready for use!**

@@ -1182,6 +1182,12 @@ def main():
             # Consensus summary
             consensus = analysis['multi_timeframe_consensus']
 
+            # NEW: Show global reversal warnings
+            if consensus.get('has_reversal_warning', False):
+                st.error("⚠️ **REVERSAL ALERTS DETECTED** - Multiple timeframes showing trend reversals!")
+                for rev in consensus.get('reversals_detected', []):
+                    st.warning(f"🔔 **{rev['timeframe'].upper()}**: {rev['type'].replace('_', ' ').title()} (Strength: {rev['strength']:.1%}, Warning: {rev['warning_level']})")
+
             col1, col2, col3 = st.columns(3)
             with col1:
                 st.metric("BUY Signals", consensus['buy_timeframes'])
@@ -1200,14 +1206,30 @@ def main():
                 tf_data = analysis['timeframe_analyses'][tf]
 
                 with st.expander(f"📊 {tf.upper()} Timeframe", expanded=True):
+                    # NEW: Check for reversal warning
+                    if tf_data.get('reversal_detection', {}).get('is_reversal', False):
+                        reversal = tf_data['reversal_detection']
+                        warning_emoji = '🚨' if reversal['warning_level'] == 'HIGH' else ('⚠️' if reversal['warning_level'] == 'MEDIUM' else '⚡')
+                        st.warning(f"{warning_emoji} **REVERSAL DETECTED**: {reversal['reversal_type'].replace('_', ' ').title()} (Strength: {reversal['reversal_strength']:.1%})")
+
+                    # NEW: Show enhanced signal vs original
+                    if tf_data.get('signal_changed', False):
+                        st.info(f"📊 **Enhanced Signal**: {tf_data.get('enhanced_signal', 'N/A')} (Confidence: {tf_data.get('signal_confidence', 0):.1%}) | Original: {tf_data.get('current_consensus', 'N/A')}")
+                        st.caption(tf_data.get('signal_reasoning', 'No reasoning available'))
+
                     col1, col2, col3 = st.columns(3)
 
                     with col1:
                         st.metric("Trend Strength", f"{tf_data['trend_strength']:.1%}")
                         st.metric("Momentum", tf_data['momentum'])
 
+                        # NEW: Show historical momentum
+                        if 'trend_momentum' in tf_data:
+                            tm = tf_data['trend_momentum']
+                            st.metric("Historical Momentum", f"{tm['direction']} ({tm['momentum_score']:.1%})")
+
                     with col2:
-                        st.markdown("**Signals:**")
+                        st.markdown("**Individual Signals:**")
                         signals = tf_data['signals']
                         for sig_name, sig_value in signals.items():
                             color = '🟢' if sig_value == 'BUY' else ('🔴' if sig_value == 'SELL' else '🟡')

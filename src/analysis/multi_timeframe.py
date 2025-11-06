@@ -11,6 +11,7 @@ import logging
 from ..indicators.technical_indicators import TechnicalIndicators, SignalGenerator
 from ..indicators.support_resistance import SupportResistance
 from .enhanced_recommendations import EnhancedRecommendations
+from .trend_momentum import TrendMomentumAnalyzer
 
 logger = logging.getLogger(__name__)
 
@@ -79,16 +80,48 @@ class MultiTimeframeAnalyzer:
                 df, signals, timeframe
             )
 
+            # NEW: Calculate trend momentum from historical candles
+            trend_momentum = TrendMomentumAnalyzer.calculate_trend_momentum(df, lookback=20)
+
+            # NEW: Detect potential reversals
+            reversal_detection = TrendMomentumAnalyzer.detect_reversal(
+                df, recent_lookback=5, historical_lookback=20
+            )
+
+            # Get current consensus signal from indicators
+            tf_signals = list(signals.values())
+            tf_buy = tf_signals.count('BUY')
+            tf_sell = tf_signals.count('SELL')
+
+            if tf_buy > tf_sell:
+                current_consensus = 'BUY'
+            elif tf_sell > tf_buy:
+                current_consensus = 'SELL'
+            else:
+                current_consensus = 'HOLD'
+
+            # NEW: Get enhanced signal with momentum and reversal consideration
+            enhanced_signal_analysis = TrendMomentumAnalyzer.get_enhanced_analysis(
+                df, current_consensus
+            )
+
             return {
                 'timeframe': timeframe,
                 'signals': signals,
+                'current_consensus': current_consensus,  # Original consensus
+                'enhanced_signal': enhanced_signal_analysis['final_signal'],  # NEW: Enhanced signal
+                'signal_confidence': enhanced_signal_analysis['confidence'],  # NEW: Confidence level
+                'signal_reasoning': enhanced_signal_analysis['reasoning'],  # NEW: Why this signal
                 'trend_strength': trend_strength,
                 'momentum': momentum,
+                'trend_momentum': trend_momentum,  # NEW: Historical momentum analysis
+                'reversal_detection': reversal_detection,  # NEW: Reversal detection
                 'current_data': current_data,
                 'support_levels': sr_levels['support'],
                 'resistance_levels': sr_levels['resistance'],
                 'dataframe': df,
-                'enhanced_recommendation': enhanced_rec  # NEW: V2-style recommendations
+                'enhanced_recommendation': enhanced_rec,
+                'signal_changed': enhanced_signal_analysis['signal_changed']  # NEW: Did signal change?
             }
 
         except Exception as e:
@@ -229,21 +262,35 @@ class MultiTimeframeAnalyzer:
         weighted_buy = 0.0
         weighted_sell = 0.0
 
+        # NEW: Track timeframes with reversals for additional context
+        reversals_detected = []
+
         for tf, analysis in analyses.items():
-            signals = analysis['signals']
             weight = timeframe_weights.get(tf, 0.1)
 
-            # Count majority signal for this timeframe
-            tf_signals = list(signals.values())
-            tf_buy = tf_signals.count('BUY')
-            tf_sell = tf_signals.count('SELL')
+            # NEW: Use enhanced signal instead of just indicator signals
+            # This considers historical momentum and reversals
+            enhanced_signal = analysis.get('enhanced_signal', analysis.get('current_consensus', 'HOLD'))
+            signal_confidence = analysis.get('signal_confidence', 0.5)
 
-            if tf_buy > tf_sell:
+            # Apply confidence weighting (stronger signals get more weight)
+            confidence_weight = weight * signal_confidence
+
+            # Check for reversal warnings
+            if analysis.get('reversal_detection', {}).get('is_reversal', False):
+                reversals_detected.append({
+                    'timeframe': tf,
+                    'type': analysis['reversal_detection']['reversal_type'],
+                    'strength': analysis['reversal_detection']['reversal_strength'],
+                    'warning_level': analysis['reversal_detection']['warning_level']
+                })
+
+            if enhanced_signal == 'BUY':
                 buy_count += 1
-                weighted_buy += weight
-            elif tf_sell > tf_buy:
+                weighted_buy += confidence_weight
+            elif enhanced_signal == 'SELL':
                 sell_count += 1
-                weighted_sell += weight
+                weighted_sell += confidence_weight
             else:
                 hold_count += 1
 
@@ -270,7 +317,9 @@ class MultiTimeframeAnalyzer:
             'confidence': confidence,
             'buy_timeframes': buy_count,
             'sell_timeframes': sell_count,
-            'hold_timeframes': hold_count
+            'hold_timeframes': hold_count,
+            'reversals_detected': reversals_detected,  # NEW: List of detected reversals
+            'has_reversal_warning': len(reversals_detected) > 0  # NEW: Quick check
         }
 
     def get_detailed_report(self, analyses: Dict[str, Dict]) -> str:

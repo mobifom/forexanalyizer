@@ -282,3 +282,83 @@ Look for **"⚙️ Advanced Settings"** in the sidebar!
 **Answer: YES! Everything is now adjustable through the GUI! 🎉**
 
 Start the GUI and look for the "⚙️ Advanced Settings" section in the sidebar. You can adjust all risk and signal quality settings with simple sliders and preset buttons!
+
+---
+
+# 🚀 Latest Update - Enhanced Signal Generation with Momentum & Reversals
+
+## What's New (Latest)
+
+Your Forex Analyzer now analyzes **historical trend momentum** and **detects sudden reversals** automatically!
+
+### Key Features
+
+#### 1. Historical Candle Analysis 📊
+- Analyzes last **20 candles** for trend context
+- Measures trend strength and consistency
+- Not just looking at the latest candle anymore!
+
+#### 2. Reversal Detection ⚠️
+- Automatically detects when strong trends reverse direction
+- Warning levels: HIGH (🚨), MEDIUM (⚠️), LOW (⚡)
+- Helps you exit before major losses
+
+#### 3. Weighted Signals 🎯
+- **40%** Current indicators
+- **40%** Historical momentum  
+- **20%** Reversal detection
+- Confidence scores (0-100%)
+
+### How to See It
+
+1. Run: `streamlit run app.py`
+2. Analyze any symbol
+3. Go to **"Multi-Timeframe Analysis"** tab
+4. Look for:
+   - 🚨 Reversal Alerts at top
+   - 📊 Enhanced Signals per timeframe
+   - Historical Momentum metrics
+   - Confidence levels
+
+### Real Examples
+
+**Safe Buy:**
+```
+Enhanced Signal: BUY (Confidence: 85%)
+Historical Momentum: BULLISH (82%)
+No reversals
+→ Strong buy opportunity!
+```
+
+**Risky Buy:**
+```
+Enhanced Signal: BUY (Confidence: 45%)
+Historical Momentum: BEARISH (75%)
+→ Weak signal against trend - wait!
+```
+
+**Reversal Warning:**
+```
+🚨 REVERSAL DETECTED: Bullish To Bearish (85%, HIGH)
+→ EXIT longs immediately!
+```
+
+### Benefits
+
+✅ Fewer false signals
+✅ Early reversal detection
+✅ Better context for decisions
+✅ Confidence levels for every signal
+✅ Plain English reasoning
+
+### Full Documentation
+
+See `ENHANCED_SIGNAL_GENERATION.md` for complete details.
+
+---
+
+**All Updates Active - Restart Streamlit to see the enhancements!**
+
+```bash
+streamlit run app.py
+```

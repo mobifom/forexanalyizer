@@ -15,13 +15,13 @@ load_dotenv()
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from src.forex_analyzer import ForexAnalyzer
-from src.auth.authentication import Authenticator, Permissions
+from src.auth.authentication_db import AuthenticatorDB, Permissions
 
 st.set_page_config(page_title="Multi-Pair Scanner", page_icon="📊", layout="wide")
 
-# Check authentication
+# Check authentication with database
 if 'auth' not in st.session_state:
-    st.session_state.auth = Authenticator()
+    st.session_state.auth = AuthenticatorDB()
 
 auth = st.session_state.auth
 

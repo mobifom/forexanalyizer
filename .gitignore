@@ -78,3 +78,9 @@ temp/
 
 # User credentials (SECURITY - never commit!)
 config/users.yaml
+
+# SQLite database (SECURITY - never commit user database!)
+data/users.db
+data/*.db
+*.db
+config/users.yaml.backup_*

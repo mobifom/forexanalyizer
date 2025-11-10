@@ -49,6 +49,14 @@ A comprehensive forex and precious metals trading analysis tool powered by machi
 - 🔄 **Real-Time Updates** - Manual refresh for latest data
 - 📱 **Responsive Design** - Works on desktop and mobile
 
+### Authentication & User Management
+- 🔐 **SQLite Database** - Secure user credential storage
+- 🔒 **Account Locking** - Auto-lock after 5 failed login attempts (30 min lockout)
+- 📝 **Audit Logging** - Complete trail of all user actions
+- 👥 **Role-Based Access** - Admin and User roles with different permissions
+- 🔑 **Password Management** - Bcrypt hashing, change password functionality
+- 🗑️ **Soft Delete** - Users marked inactive, preserving audit trail
+
 ## 🚀 Quick Start
 
 ### Prerequisites
@@ -101,6 +109,22 @@ streamlit run app.py
 ```
 http://localhost:8501
 ```
+
+7. **Login with default credentials**
+
+The app requires authentication. Use these default credentials:
+
+**Admin Account:**
+- Username: `admin`
+- Password: `admin123`
+- Permissions: Full access (analysis, scanning, training, user management)
+
+**User Account:**
+- Username: `user`
+- Password: `user123`
+- Permissions: Limited access (analysis, scanning only)
+
+⚠️ **IMPORTANT**: Change these default passwords in the User Management page after first login!
 
 ## 📖 Documentation
 

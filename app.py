@@ -22,7 +22,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 from src.forex_analyzer import ForexAnalyzer
 from src.data.data_fetcher import ForexDataFetcher
 from src.indicators.technical_indicators import TechnicalIndicators
-from src.auth.authentication import Authenticator, Permissions
+from src.auth.authentication_db import AuthenticatorDB, Permissions
 
 # Page configuration
 st.set_page_config(
@@ -66,9 +66,9 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Initialize authentication
+# Initialize authentication with database
 if 'auth' not in st.session_state:
-    st.session_state.auth = Authenticator()
+    st.session_state.auth = AuthenticatorDB()
 
 # Initialize session state
 if 'analyzer' not in st.session_state:

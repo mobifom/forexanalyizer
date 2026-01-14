@@ -1,6 +1,158 @@
-# 🎉 What's New - GUI Risk Controls!
+# 🎉 What's New
 
-## ✨ Major Update: Adjust All Settings Through the GUI!
+## 📸 Latest: Data Snapshots System - Massive API Savings! (2025-11-17)
+
+### ✨ GUI Uses Scheduler's Data - Zero Extra API Calls!
+
+The **GUI** (Analysis, Scanner, Training) now **reads data from the scheduler's snapshots** instead of fetching fresh data from the API!
+
+**Before**: Scheduler fetches + GUI fetches = **2× API calls** (wasteful!)
+**After**: Scheduler fetches → Saves to DB → GUI reads from DB = **0 extra API calls!**
+
+### 🆕 New Features
+
+1. **📸 Data Snapshots Database**
+   - Scheduler automatically saves all fetched data
+   - SQLite database: `data/data_snapshots.db`
+   - Stores OHLCV data for all assets/timeframes
+
+2. **🔄 Smart Data Retrieval in GUI**
+   - Checks snapshots first (latest from scheduler)
+   - Only fetches fresh if snapshot missing or too old
+   - **0 API calls** if scheduler already fetched data!
+
+3. **⚡ Massive API Savings**
+   - **Scanner** ("Scan All" 10 assets): **40 API calls → 0 calls!** ✅
+   - **Analysis** (single asset): **4 API calls → 0 calls!** ✅
+   - **Training** (historical data): Uses snapshots when available ✅
+
+4. **📊 Automatic Snapshot Updates**
+   - 15m data: Updated every 15 minutes
+   - 1h data: Updated every 60 minutes
+   - 4h data: Updated every 60 minutes
+   - 1d data: Updated once per day
+
+### 🎯 How It Works
+
+```
+Scheduler (Batch Job):
+  Fetch EURUSD 15m from API → Save to snapshots DB
+
+GUI User:
+  Click "Analyze" EURUSD
+  → Check snapshots DB first
+  → Found! (fetched 2 min ago)
+  → Use snapshot data (0 API calls!) 📸
+```
+
+### 💡 Example Savings
+
+**Full Scanner Run** (10 assets × 4 timeframes):
+- Without snapshots: **40 API calls**
+- With snapshots: **0 API calls** (if scheduler running)
+- **Savings: 40 calls!**
+
+### ✅ Benefits
+
+- ✅ **Zero extra API calls** from GUI (if scheduler running)
+- ✅ **Faster GUI responses** (DB read vs API wait)
+- ✅ **Always fresh data** (scheduler keeps it updated)
+- ✅ **No configuration needed** (works automatically)
+- ✅ **Backward compatible** (falls back to API if no snapshots)
+
+---
+
+## 🔄 Previous: Multiple TwelveData API Keys with Automatic Rotation! (2025-11-17)
+
+### ✨ 3× Your API Capacity - Zero Downtime!
+
+Now supports **up to 3 TwelveData API keys** with **automatic rotation** when limits are reached!
+
+**Before**: 800 calls/day → Scheduler stops
+**After**: 2,400 calls/day → **Zero downtime!**
+
+### 🆕 New Features
+
+1. **🔑 Multiple API Keys Support**
+   - Configure up to 3 TwelveData API keys
+   - Total capacity: **2,400 calls/day** (3 × 800)
+   - All 10 assets continuously monitored
+
+2. **🔄 Automatic Key Rotation**
+   - When Key #1 hits 800 calls → auto-switch to Key #2
+   - When Key #2 hits 800 calls → auto-switch to Key #3
+   - **Seamless** - no interruption to scheduler
+   - **Zero downtime** - continuous operation
+
+3. **📊 Per-Key Usage Tracking**
+   - Monitor each key independently
+   - Combined usage reports every 5 minutes
+   - See which key is active
+   - Track remaining capacity per key
+
+4. **🛡️ Thread-Safe Operations**
+   - All operations use locks
+   - Safe for concurrent access
+   - No race conditions
+
+### 📚 Documentation
+
+- **Setup Guide**: `MULTIPLE_API_KEYS_SETUP.md` - How to configure 3 API keys
+- **Integration Guide**: `API_KEY_ROTATION_INTEGRATION.md` - Technical details
+- **Implementation Summary**: `IMPLEMENTATION_COMPLETE.md` - What was built
+
+### 🚀 Quick Start
+
+```bash
+# 1. Set environment variables
+export TWELVEDATA_API_KEY_1='your_first_key'
+export TWELVEDATA_API_KEY_2='your_second_key'
+export TWELVEDATA_API_KEY_3='your_third_key'
+
+# 2. Test integration
+python test_api_rotation.py
+
+# 3. Run scheduler
+python run_scheduler.py
+
+# 4. Watch for rotation
+# You'll see: "🔄 Rotating from API key #1 to key #2"
+```
+
+### 📈 Usage Report Example
+
+```
+======================================================================
+API KEY ROTATOR - USAGE REPORT
+======================================================================
+Active Key: #1 of 3
+Per-Minute Usage: 2 / 8 calls
+
+Daily Usage by Key:
+  → Key #1: 256 / 800 calls (32.0%) [544 remaining]
+    Key #2: 0 / 800 calls (0.0%) [800 remaining]
+    Key #3: 0 / 800 calls (0.0%) [800 remaining]
+
+Combined Total: 256 / 2400 calls (10.7%)
+Total Remaining: 2144 calls
+======================================================================
+```
+
+### ✅ Benefits
+
+- ✅ **2,400 calls/day** (vs 800 before)
+- ✅ **Zero downtime** when limits reached
+- ✅ **All 10 assets** continuously monitored
+- ✅ **Automatic rotation** - no manual work
+- ✅ **100% free** (3 free TwelveData accounts)
+- ✅ **Backward compatible** - works with 1 key too
+- ✅ **GUI Integration** - Analysis & Scanner buttons use rotation too!
+
+---
+
+## 🎨 Previous Update: GUI Risk Controls!
+
+### ✨ Adjust All Settings Through the GUI!
 
 You can now control **all risk and signal quality settings** directly from the web interface - no need to edit config files!
 

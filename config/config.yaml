@@ -14,14 +14,25 @@ timeframe_weights:
   '1h': 0.2
   '15m': 0.1
 
-# Currency pairs and commodities to analyze
+# Assets to analyze (Forex, Indices, Crypto, Commodities)
 currency_pairs:
+  # Forex Pairs
   - 'EURUSD=X'   # Euro / US Dollar
   - 'GBPUSD=X'   # British Pound / US Dollar
   - 'USDJPY=X'   # US Dollar / Japanese Yen
   - 'AUDUSD=X'   # Australian Dollar / US Dollar
+
+  # Commodities (Metals)
   - 'XAU_USD'    # Gold Spot (Oanda) - fallback to GC=F (yfinance)
   - 'XAG_USD'    # Silver Spot (Oanda) - fallback to SI=F (yfinance)
+
+  # Indices
+  - 'US30'       # Dow Jones Industrial Average (TwelveData) - fallback to ^DJI (yfinance)
+  - 'US100'      # NASDAQ 100 / USTec (TwelveData) - fallback to ^NDX (yfinance)
+
+  # Crypto
+  - 'BTC/USD'    # Bitcoin (TwelveData/yfinance: BTC-USD)
+  - 'ETH/USD'    # Ethereum (TwelveData/yfinance: ETH-USD)
 
 # Technical Indicators Settings
 indicators:
@@ -41,8 +52,62 @@ indicators:
 
 # Signal Confluence Settings
 confluence:
-  min_timeframes_agree: 1  # Minimum timeframes that must agree (2/4 = 50%)
-  min_confidence: 0.4      # Minimum confidence score (0-1) - 50%
+  min_timeframes_agree: 2  # Minimum timeframes that must agree (2/4 = 50%)
+  min_confidence: 0.5      # Minimum confidence score (0-1) - 50%
+
+# Enhanced Signal Control Settings
+signal_control:
+  # Per-timeframe minimum confidence thresholds (0-1 scale)
+  # Signals below these thresholds will be ignored for that timeframe
+  min_confidence_by_timeframe:
+    '1d': 0.4     # Daily: 40% minimum - most reliable
+    '4h': 0.5     # 4-hour: 50% minimum
+    '1h': 0.6     # 1-hour: 60% minimum
+    '15m': 0.7    # 15-minute: 70% minimum - requires higher confidence due to noise
+
+  # Higher timeframe confirmation requirement
+  # If true, lower timeframes (15m, 1h) require confirmation from higher timeframes (4h, 1d)
+  require_higher_tf_confirmation: true
+
+  # Confirmation rules: which timeframes must confirm signals from lower timeframes
+  confirmation_rules:
+    '15m_requires': ['1h', '4h']  # 15min signals need confirmation from 1h OR 4h
+    '1h_requires': ['4h', '1d']   # 1h signals need confirmation from 4h OR 1d
+    '4h_requires': []             # 4h signals are independent (but weighted with 1d)
+    '1d_requires': []             # Daily signals are independent
+
+  # Conflicting signals handling
+  # When timeframes conflict (e.g., 15m=BUY but 1h/4h=HOLD), what to do?
+  conflict_resolution:
+    mode: 'weighted_priority'  # Options: 'weighted_priority', 'conservative', 'higher_tf_wins'
+    # weighted_priority: Use timeframe weights (1d=40%, 4h=30%, 1h=20%, 15m=10%)
+    # conservative: Default to HOLD when signals conflict
+    # higher_tf_wins: Always prefer higher timeframe signal in conflicts
+
+  # Momentum and reversal settings
+  momentum:
+    enable_momentum_filter: true   # Filter signals using trend momentum analysis
+    min_momentum_strength: 0.5     # Minimum momentum score (0-1) to trust signal
+    momentum_lookback: 20          # Candles to analyze for momentum (default: 20)
+
+  reversal:
+    enable_reversal_detection: true  # Detect trend reversals
+    reversal_warning_action: 'downgrade'  # Options: 'ignore', 'downgrade', 'block'
+    # ignore: Show reversal warning but don't change signal
+    # downgrade: Reduce signal confidence when reversal detected
+    # block: Don't generate signals when reversal detected
+    downgrade_factor: 0.5          # Multiply confidence by this when reversal detected (0-1)
+
+  # Signal strength requirements
+  strength:
+    min_indicators_agree: 3        # Minimum indicators (out of 5) that must agree per timeframe
+    strong_signal_threshold: 4     # Indicators needed for "STRONG BUY/SELL" (out of 5)
+
+  # Divergence detection (when price and indicators disagree)
+  divergence:
+    check_divergence: true         # Check for bullish/bearish divergences
+    divergence_action: 'downgrade' # Options: 'ignore', 'downgrade', 'block'
+    divergence_penalty: 0.3        # Reduce confidence by this amount when divergence detected
 
 # ML Model Settings
 ml_model:
@@ -63,22 +128,100 @@ risk_management:
 data:
   historical_days: 365        # Days of historical data to fetch
   cache_enabled: true
-  cache_duration_minutes: 10  # 10 minutes auto-refresh (manual refresh bypasses cache)
+  cache_duration_minutes: 20  # 20 minutes auto-refresh (manual refresh bypasses cache)
   data_source: 'auto'         # Options: 'twelvedata', 'finnhub', 'yfinance', 'oanda', 'auto'
                               # 'auto' tries Twelve Data first (if configured), then Oanda, falls back to yfinance
                               # Use 'yfinance' if you don't have API keys
 
+# Smart Scheduler Settings - Optimized Data Retrieval
+scheduler:
+  enabled: true               # Enable automatic scheduled data retrieval
+
+  # Fetch intervals for each timeframe (in minutes)
+  fetch_intervals:
+    '15m': 15                 # Fetch 15min candles every 15 minutes (96 calls/asset/day)
+    '1h': 60                  # Fetch 1h candles every 60 minutes (24 calls/asset/day)
+    '4h': 60                  # Fetch 4h candles every 1 hour (24 calls/asset/day)
+    '1d': 1440                # Fetch daily candles once per day (1 call/asset/day)
+    # Total per asset: 96 + 24 + 24 + 1 = 145 calls/day
+    # Total for 10 assets: 1,450 calls/day (exceeds free tier 800/day)
+
+  # Trading hours optimization (to reduce API calls)
+  respect_market_hours: true  # Only fetch during active market hours
+  market_hours:
+    # Forex: 24/5 (Sunday 5pm - Friday 5pm ET)
+    forex:
+      enabled: true
+      days: [0, 1, 2, 3, 4]   # Monday-Friday (Sunday evening excluded)
+      start_hour: 17          # 5 PM ET Sunday (starts Monday 00:00 UTC in practice)
+      end_hour: 17            # 5 PM ET Friday
+
+    # US Indices: 9:30am - 4pm ET (Mon-Fri)
+    indices:
+      enabled: true
+      days: [0, 1, 2, 3, 4]   # Monday-Friday
+      start_hour: 9           # 9 AM ET
+      end_hour: 16            # 4 PM ET
+
+    # Crypto: 24/7
+    crypto:
+      enabled: false          # Don't restrict crypto (24/7 market)
+      days: [0, 1, 2, 3, 4, 5, 6]
+      start_hour: 0
+      end_hour: 24
+
+  # API Rate Limiting & Optimization
+  rate_limiting:
+    max_calls_per_minute: 8   # Free tier: 8 calls/minute
+    max_calls_per_day: 800    # Free tier: 800 calls/day
+    enable_smart_throttling: true  # Automatically pause when approaching limits
+
+  # Priority system for asset fetching (when API limits are tight)
+  asset_priority:
+    high: ['EURUSD=X', 'BTC/USD', 'US30']  # Fetch these first
+    medium: ['GBPUSD=X', 'ETH/USD', 'US100', 'XAU_USD']
+    low: ['USDJPY=X', 'AUDUSD=X', 'XAG_USD']
+
+  # Auto-trigger analysis after data fetch
+  auto_analysis:
+    enabled: true             # Automatically analyze after fetching data
+    trigger_on_timeframes: ['15m', '1h', '4h', '1d']  # Which timeframes trigger analysis
+    batch_analysis: true      # Analyze multiple timeframes together (more efficient)
+    delay_seconds: 2          # Wait N seconds after fetch before analyzing
+
 # Twelve Data API Settings (RECOMMENDED - Real-time forex data!)
 twelvedata:
   enabled: true              # Set to true to use Twelve Data for real-time forex
-  api_key: ''                # Leave empty - Set TWELVEDATA_API_KEY environment variable instead
+
+  # Multiple API Keys Support (automatic rotation when limits reached)
+  # Each key provides: 8 calls/minute, 800 calls/day
+  api_keys:
+    - ''                     # Primary API key (set via TWELVEDATA_API_KEY_1 env var)
+    - ''                     # Secondary API key (set via TWELVEDATA_API_KEY_2 env var)
+    - ''                     # Tertiary API key (set via TWELVEDATA_API_KEY_3 env var)
+
+  # Legacy single key support (deprecated - use api_keys above)
+  api_key: ''                # Leave empty if using api_keys above
+
+  # Auto-rotation settings
+  rotation:
+    enabled: true            # Automatically switch to next key when daily limit reached
+    check_interval: 60       # Seconds between rotation checks (default: 60)
+
   # ⭐ SUPPORTS FOREX & METALS ON FREE TIER! (Unlike Finnhub)
-  # To get API key:
+  # To get API keys:
   # 1. Sign up at https://twelvedata.com/pricing (FREE - no credit card!)
-  # 2. Copy your API key from the dashboard
-  # 3. Set environment variable: export TWELVEDATA_API_KEY='your_key_here'
-  # 4. Or add to .env file: TWELVEDATA_API_KEY=your_key_here
-  # Free tier: 8 API calls/minute, 800/day - Includes forex & metals!
+  # 2. Create up to 3 accounts/API keys for 2,400 calls/day total
+  # 3. Set environment variables:
+  #    export TWELVEDATA_API_KEY_1='your_first_key_here'
+  #    export TWELVEDATA_API_KEY_2='your_second_key_here'
+  #    export TWELVEDATA_API_KEY_3='your_third_key_here'
+  # 4. Or add to .env file:
+  #    TWELVEDATA_API_KEY_1=your_first_key_here
+  #    TWELVEDATA_API_KEY_2=your_second_key_here
+  #    TWELVEDATA_API_KEY_3=your_third_key_here
+  # Free tier PER KEY: 8 calls/minute, 800/day
+  # With 3 keys: 8 calls/minute (shared), 2,400/day total!
 
 # Finnhub API Settings (Stocks only on free tier - Forex requires premium $99/month)
 finnhub:

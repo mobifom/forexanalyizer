@@ -62,6 +62,43 @@ def get_default_config() -> Dict:
             'min_timeframes_agree': 3,
             'min_confidence': 0.6
         },
+        'signal_control': {
+            'min_confidence_by_timeframe': {
+                '1d': 0.4,
+                '4h': 0.5,
+                '1h': 0.6,
+                '15m': 0.7
+            },
+            'require_higher_tf_confirmation': True,
+            'confirmation_rules': {
+                '15m_requires': ['1h', '4h'],
+                '1h_requires': ['4h', '1d'],
+                '4h_requires': [],
+                '1d_requires': []
+            },
+            'conflict_resolution': {
+                'mode': 'weighted_priority'
+            },
+            'momentum': {
+                'enable_momentum_filter': True,
+                'min_momentum_strength': 0.5,
+                'momentum_lookback': 20
+            },
+            'reversal': {
+                'enable_reversal_detection': True,
+                'reversal_warning_action': 'downgrade',
+                'downgrade_factor': 0.5
+            },
+            'strength': {
+                'min_indicators_agree': 3,
+                'strong_signal_threshold': 4
+            },
+            'divergence': {
+                'check_divergence': True,
+                'divergence_action': 'downgrade',
+                'divergence_penalty': 0.3
+            }
+        },
         'ml_model': {
             'train_test_split': 0.2,
             'lookback_periods': 5,
@@ -79,5 +116,51 @@ def get_default_config() -> Dict:
             'historical_days': 365,
             'cache_enabled': True,
             'cache_duration_minutes': 60
+        },
+        'scheduler': {
+            'enabled': True,
+            'fetch_intervals': {
+                '15m': 15,
+                '1h': 60,
+                '4h': 240,
+                '1d': 360
+            },
+            'respect_market_hours': True,
+            'market_hours': {
+                'forex': {
+                    'enabled': True,
+                    'days': [0, 1, 2, 3, 4],
+                    'start_hour': 0,
+                    'end_hour': 24
+                },
+                'indices': {
+                    'enabled': True,
+                    'days': [0, 1, 2, 3, 4],
+                    'start_hour': 9,
+                    'end_hour': 16
+                },
+                'crypto': {
+                    'enabled': False,
+                    'days': [0, 1, 2, 3, 4, 5, 6],
+                    'start_hour': 0,
+                    'end_hour': 24
+                }
+            },
+            'rate_limiting': {
+                'max_calls_per_minute': 8,
+                'max_calls_per_day': 800,
+                'enable_smart_throttling': True
+            },
+            'asset_priority': {
+                'high': ['EURUSD=X', 'BTC/USD', 'US30'],
+                'medium': ['GBPUSD=X', 'ETH/USD', 'US100', 'XAU_USD'],
+                'low': ['USDJPY=X', 'AUDUSD=X', 'XAG_USD']
+            },
+            'auto_analysis': {
+                'enabled': True,
+                'trigger_on_timeframes': ['15m', '1h', '4h', '1d'],
+                'batch_analysis': True,
+                'delay_seconds': 2
+            }
         }
     }

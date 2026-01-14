@@ -14,6 +14,22 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Import in-memory cache
+try:
+    from ..utils.data_cache import DataCache
+    MEMORY_CACHE_AVAILABLE = True
+except ImportError:
+    MEMORY_CACHE_AVAILABLE = False
+    logger.debug("In-memory cache not available")
+
+# Import data snapshots database
+try:
+    from ..database.data_snapshots_db import DataSnapshotsDB
+    SNAPSHOTS_DB_AVAILABLE = True
+except ImportError:
+    SNAPSHOTS_DB_AVAILABLE = False
+    logger.debug("Data snapshots DB not available")
+
 # Import Twelve Data fetcher
 try:
     from .twelvedata_fetcher import TwelveDataFetcher
@@ -47,6 +63,7 @@ class ForexDataFetcher:
         cache_duration_minutes: int = 60,
         data_source: str = 'yfinance',
         twelvedata_api_key: str = None,
+        twelvedata_api_key_provider=None,
         finnhub_api_key: str = None,
         oanda_api_key: str = None,
         oanda_account_type: str = 'practice'
@@ -59,6 +76,7 @@ class ForexDataFetcher:
             cache_duration_minutes: How long to cache data before refreshing
             data_source: Data source to use ('twelvedata', 'finnhub', 'yfinance', 'oanda', 'auto')
             twelvedata_api_key: Twelve Data API key (FREE - supports forex!)
+            twelvedata_api_key_provider: Optional callable that returns current API key (for rotation)
             finnhub_api_key: Finnhub API key (Premium required for forex)
             oanda_api_key: Oanda API key (required if using Oanda)
             oanda_account_type: 'practice' or 'live' for Oanda
@@ -68,27 +86,51 @@ class ForexDataFetcher:
         self.data_source = data_source.lower()
         os.makedirs(cache_dir, exist_ok=True)
 
+        # Initialize in-memory cache
+        self.memory_cache = None
+        if MEMORY_CACHE_AVAILABLE:
+            try:
+                self.memory_cache = DataCache(cache_duration_minutes=cache_duration_minutes)
+                logger.info("✅ In-memory cache initialized")
+            except Exception as e:
+                logger.warning(f"Could not initialize in-memory cache: {e}")
+
+        # Initialize snapshots database
+        self.snapshots_db = None
+        if SNAPSHOTS_DB_AVAILABLE:
+            try:
+                self.snapshots_db = DataSnapshotsDB()
+                logger.info("✅ Data snapshots database initialized")
+            except Exception as e:
+                logger.warning(f"Could not initialize snapshots DB: {e}")
+
         # Initialize Twelve Data fetcher if requested (BEST for free forex!)
         self.twelvedata_fetcher = None
         if self.data_source in ['twelvedata', 'auto'] and TWELVEDATA_AVAILABLE:
             # Try to get API key from Streamlit secrets first (for cloud deployment)
             api_key_to_use = twelvedata_api_key
-            if not api_key_to_use:
+            if not api_key_to_use and not twelvedata_api_key_provider:
                 try:
                     import streamlit as st
                     api_key_to_use = st.secrets.get("TWELVEDATA_API_KEY", "")
                 except Exception:
                     pass  # Streamlit secrets not available (local dev)
 
-            if api_key_to_use:
+            if api_key_to_use or twelvedata_api_key_provider:
                 try:
-                    self.twelvedata_fetcher = TwelveDataFetcher(api_key=api_key_to_use)
-                    # Test API connection
-                    if self.twelvedata_fetcher.check_api_status():
-                        logger.info("✅ Twelve Data API initialized - Real-time forex data available!")
-                    else:
-                        logger.warning("⚠️ Twelve Data API key may be invalid")
-                        self.twelvedata_fetcher = None
+                    self.twelvedata_fetcher = TwelveDataFetcher(
+                        api_key=api_key_to_use,
+                        api_key_provider=twelvedata_api_key_provider
+                    )
+                    # Test API connection (only if we have a static key, not a provider)
+                    if api_key_to_use and not twelvedata_api_key_provider:
+                        if self.twelvedata_fetcher.check_api_status():
+                            logger.info("✅ Twelve Data API initialized - Real-time forex data available!")
+                        else:
+                            logger.warning("⚠️ Twelve Data API key may be invalid")
+                            self.twelvedata_fetcher = None
+                    elif twelvedata_api_key_provider:
+                        logger.info("✅ Twelve Data API initialized with key rotation - Real-time forex data available!")
                 except Exception as e:
                     logger.warning(f"Failed to initialize Twelve Data: {e}")
                     self.twelvedata_fetcher = None
@@ -188,7 +230,9 @@ class ForexDataFetcher:
         self,
         symbol: str,
         timeframe: str = '1d',
-        use_cache: bool = True
+        use_cache: bool = True,
+        use_snapshot: bool = True,
+        max_snapshot_age_minutes: int = None
     ) -> Optional[pd.DataFrame]:
         """
         Fetch forex data for a given symbol and timeframe
@@ -197,18 +241,47 @@ class ForexDataFetcher:
             symbol: Forex pair symbol (e.g., 'EURUSD=X', 'EUR_USD')
             timeframe: Time interval ('1d', '4h', '1h', '15m')
             use_cache: Whether to use cached data if available
+            use_snapshot: Whether to use data snapshots from scheduler (recommended)
+            max_snapshot_age_minutes: Maximum age of snapshot (None = use_cache_duration)
 
         Returns:
             DataFrame with OHLCV data
         """
+        # Try to load from in-memory cache first (fastest)
+        if use_cache and self.memory_cache:
+            cached_data = self.memory_cache.get(symbol, timeframe)
+            if cached_data is not None:
+                return cached_data
+
+        # Try to load from snapshot second (scheduler's latest data)
+        if use_snapshot and self.snapshots_db:
+            max_age = max_snapshot_age_minutes if max_snapshot_age_minutes is not None else int(self.cache_duration.total_seconds() / 60)
+
+            snapshot_data = self.snapshots_db.get_snapshot(
+                asset_symbol=symbol,
+                timeframe=timeframe,
+                max_age_minutes=max_age
+            )
+
+            if snapshot_data is not None:
+                logger.info(f"📸 Loading {symbol} {timeframe} from snapshot (batch job data)")
+                # Update in-memory cache with snapshot data
+                if self.memory_cache:
+                    self.memory_cache.set(symbol, timeframe, snapshot_data)
+                return snapshot_data
+
         cache_path = self._get_cache_path(symbol, timeframe)
 
-        # Try to load from cache
+        # Try to load from file cache
         if use_cache and self._is_cache_valid(cache_path):
             try:
                 with open(cache_path, 'rb') as f:
-                    logger.info(f"Loading {symbol} {timeframe} from cache")
-                    return pickle.load(f)
+                    logger.info(f"Loading {symbol} {timeframe} from file cache")
+                    cached_df = pickle.load(f)
+                    # Update in-memory cache
+                    if self.memory_cache:
+                        self.memory_cache.set(symbol, timeframe, cached_df)
+                    return cached_df
             except Exception as e:
                 logger.warning(f"Cache load failed: {e}")
 
@@ -272,6 +345,11 @@ class ForexDataFetcher:
 
         # Cache the data if successful
         if df is not None and not df.empty and use_cache:
+            # Update in-memory cache
+            if self.memory_cache:
+                self.memory_cache.set(symbol, timeframe, df)
+
+            # Update file cache
             try:
                 with open(cache_path, 'wb') as f:
                     pickle.dump(df, f)
@@ -348,7 +426,8 @@ class ForexDataFetcher:
         self,
         symbol: str,
         timeframes: list,
-        use_cache: bool = True
+        use_cache: bool = True,
+        use_snapshot: bool = True
     ) -> Dict[str, pd.DataFrame]:
         """
         Fetch data for multiple timeframes
@@ -357,26 +436,114 @@ class ForexDataFetcher:
             symbol: Forex pair symbol
             timeframes: List of timeframes to fetch
             use_cache: Whether to use cached data
+            use_snapshot: Whether to use data snapshots from scheduler
 
         Returns:
             Dictionary mapping timeframe to DataFrame
         """
         data = {}
         for tf in timeframes:
-            df = self.fetch_data(symbol, tf, use_cache)
+            df = self.fetch_data(symbol, tf, use_cache, use_snapshot)
             if df is not None:
                 data[tf] = df
 
         return data
 
+    def fetch_ohlcv(
+        self,
+        symbol: str,
+        interval: str = '1d',
+        period: str = '365d',
+        use_cache: bool = True,
+        use_snapshot: bool = True
+    ) -> Optional[pd.DataFrame]:
+        """
+        Alias for fetch_data (compatibility with scheduler)
+
+        Args:
+            symbol: Asset symbol
+            interval: Timeframe
+            period: Period (ignored, kept for compatibility)
+            use_cache: Whether to use cache
+            use_snapshot: Whether to use snapshots
+
+        Returns:
+            DataFrame with OHLCV data
+        """
+        return self.fetch_data(symbol, interval, use_cache, use_snapshot)
+
     def clear_cache(self):
         """Clear all cached data"""
         try:
+            # Clear in-memory cache
+            if self.memory_cache:
+                self.memory_cache.invalidate()
+                logger.info("In-memory cache cleared")
+
+            # Clear file cache
             for file in os.listdir(self.cache_dir):
                 os.remove(os.path.join(self.cache_dir, file))
-            logger.info("Cache cleared successfully")
+            logger.info("File cache cleared successfully")
         except Exception as e:
             logger.error(f"Error clearing cache: {e}")
+
+    def preload_data(self, symbols: list, timeframes: list) -> Dict:
+        """
+        Preload data for multiple symbols and timeframes into in-memory cache
+
+        Args:
+            symbols: List of symbols to preload
+            timeframes: List of timeframes to preload
+
+        Returns:
+            Dictionary with preload statistics
+        """
+        if not self.memory_cache:
+            logger.warning("In-memory cache not available for preloading")
+            return {'success': 0, 'failed': 0, 'errors': ['In-memory cache not available']}
+
+        logger.info(f"🚀 Preloading {len(symbols)} symbols across {len(timeframes)} timeframes...")
+        stats = {'success': 0, 'failed': 0, 'errors': []}
+
+        for symbol in symbols:
+            for timeframe in timeframes:
+                try:
+                    # Fetch data (will automatically populate memory cache)
+                    data = self.fetch_data(symbol, timeframe, use_cache=True, use_snapshot=True)
+
+                    if data is not None and not data.empty:
+                        stats['success'] += 1
+                        logger.info(f"  ✅ Preloaded {symbol} {timeframe}")
+                    else:
+                        stats['failed'] += 1
+                        stats['errors'].append(f"{symbol} {timeframe}: No data")
+                        logger.warning(f"  ❌ Failed to preload {symbol} {timeframe}: No data")
+
+                except Exception as e:
+                    stats['failed'] += 1
+                    stats['errors'].append(f"{symbol} {timeframe}: {str(e)}")
+                    logger.error(f"  ❌ Failed to preload {symbol} {timeframe}: {e}")
+
+        logger.info(f"✨ Preload complete: {stats['success']} success, {stats['failed']} failed")
+
+        # Log cache statistics
+        if self.memory_cache:
+            cache_stats = self.memory_cache.get_stats()
+            logger.info(f"📊 Cache stats: {cache_stats['fresh_entries']} fresh, {cache_stats['expired_entries']} expired")
+
+        return stats
+
+    def get_cache_stats(self) -> Dict:
+        """
+        Get in-memory cache statistics
+
+        Returns:
+            Dictionary with cache statistics
+        """
+        if not self.memory_cache:
+            return {'error': 'In-memory cache not available'}
+
+        return self.memory_cache.get_stats()
 
 
 # MetaTrader5 integration (optional - requires MT5 installed)

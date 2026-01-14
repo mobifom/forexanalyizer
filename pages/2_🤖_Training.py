@@ -48,11 +48,37 @@ if 'analyzer' not in st.session_state:
 with st.sidebar:
     st.header("Training Settings")
 
-    symbol = st.selectbox(
-        "Select Symbol to Train On",
-        ['EURUSD=X', 'GBPUSD=X', 'USDJPY=X', 'AUDUSD=X', 'XAU_USD', 'XAG_USD'],
-        help="Choose the asset to train the model on"
+    # Asset categories
+    asset_category = st.selectbox(
+        "Asset Category",
+        ['Forex Pairs', 'Indices', 'Crypto', 'Precious Metals']
     )
+
+    if asset_category == 'Forex Pairs':
+        symbol = st.selectbox(
+            "Select Forex Pair",
+            ['EURUSD=X', 'GBPUSD=X', 'USDJPY=X', 'AUDUSD=X']
+        )
+    elif asset_category == 'Indices':
+        symbol = st.selectbox(
+            "Select Index",
+            ['US30', 'US100'],
+            format_func=lambda x: 'US30 (Dow Jones)' if x == 'US30' else 'US100 (NASDAQ 100)'
+        )
+    elif asset_category == 'Crypto':
+        symbol = st.selectbox(
+            "Select Cryptocurrency",
+            ['BTC/USD', 'ETH/USD'],
+            format_func=lambda x: 'Bitcoin' if x == 'BTC/USD' else 'Ethereum'
+        )
+    else:  # Precious Metals
+        symbol = st.selectbox(
+            "Select Metal",
+            ['XAU_USD', 'XAG_USD'],
+            format_func=lambda x: 'Gold Spot' if x == 'XAU_USD' else 'Silver Spot'
+        )
+
+    st.caption(f"Training model for: {symbol}")
 
     st.divider()
 

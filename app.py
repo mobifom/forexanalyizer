@@ -12,6 +12,9 @@ import sys
 import os
 from datetime import datetime
 from dotenv import load_dotenv
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Load environment variables from .env file
 load_dotenv()
@@ -23,6 +26,7 @@ from src.forex_analyzer import ForexAnalyzer
 from src.data.data_fetcher import ForexDataFetcher
 from src.indicators.technical_indicators import TechnicalIndicators
 from src.auth.authentication_db import AuthenticatorDB, Permissions
+from src.utils.opportunities import add_opportunities_to_session
 
 # Page configuration
 st.set_page_config(
@@ -66,17 +70,69 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Initialize authentication with database
+# Try to auto-authenticate from browser localStorage
 if 'auth' not in st.session_state:
     st.session_state.auth = AuthenticatorDB()
+
+# Check for auto-login from localStorage (via query params)
+query_params = st.query_params
+auto_login_user = query_params.get("auto_login")
+
+if auto_login_user and not st.session_state.auth.is_authenticated():
+    try:
+        import base64
+        # Decode username from query param
+        username = base64.b64decode(auto_login_user).decode()
+
+        # Get user from database
+        user = st.session_state.auth.db.get_user(username)
+        if user:
+            # Set session state for auto-login
+            st.session_state['authenticated'] = True
+            st.session_state['username'] = username
+            st.session_state['user_role'] = user['role']
+            st.session_state['user_name'] = user['name']
+            st.session_state['user_email'] = user['email']
+
+            # Remove auto_login from URL to clean it up
+            st.query_params.clear()
+            st.query_params.update({"symbol": query_params.get("symbol", "")})
+            st.rerun()
+    except Exception:
+        pass
 
 # Initialize session state
 if 'analyzer' not in st.session_state:
     st.session_state.analyzer = ForexAnalyzer()
+    st.session_state.cache_preloaded = False
 if 'analysis_result' not in st.session_state:
     st.session_state.analysis_result = None
 if 'current_symbol' not in st.session_state:
     st.session_state.current_symbol = None
+
+# Preload data cache on first run (only once per session)
+if not st.session_state.get('cache_preloaded', False):
+    with st.spinner('🚀 Preloading market data into cache... Please wait...'):
+        try:
+            # Get symbols from config
+            config = st.session_state.analyzer.config
+            symbols_to_preload = config.get('currency_pairs', [])[:4]  # Limit to first 4 to avoid long startup
+            timeframes_to_preload = ['1d', '4h', '1h', '15m']
+
+            preload_stats = st.session_state.analyzer.preload_cache(
+                symbols=symbols_to_preload,
+                timeframes=timeframes_to_preload
+            )
+
+            st.session_state.cache_preloaded = True
+            st.session_state.preload_stats = preload_stats
+
+            # Log success
+            if preload_stats['success'] > 0:
+                logger.info(f"✨ Cache preloaded: {preload_stats['success']} items loaded, {preload_stats['failed']} failed")
+        except Exception as e:
+            logger.error(f"Error preloading cache: {e}")
+            st.session_state.cache_preloaded = True  # Mark as attempted to avoid retrying
 
 def create_candlestick_chart(df, symbol, timeframe):
     """Create an interactive candlestick chart with indicators"""
@@ -168,6 +224,253 @@ def create_candlestick_chart(df, symbol, timeframe):
 
     return fig
 
+def create_combined_sr_chart(analysis, symbol):
+    """Create a combined chart showing support/resistance levels across multiple timeframes"""
+    # Define timeframes to display
+    timeframes = ['15m', '1h', '4h']
+
+    # Define colors for each timeframe
+    tf_colors = {
+        '15m': {'support': 'rgba(0, 255, 0, 0.3)', 'resistance': 'rgba(255, 0, 0, 0.3)', 'line': 'green'},
+        '1h': {'support': 'rgba(0, 100, 255, 0.3)', 'resistance': 'rgba(255, 100, 0, 0.3)', 'line': 'blue'},
+        '4h': {'support': 'rgba(255, 0, 255, 0.3)', 'resistance': 'rgba(255, 255, 0, 0.3)', 'line': 'purple'}
+    }
+
+    # Use the longest timeframe data as the base chart (4h)
+    base_tf = '4h'
+    if base_tf not in analysis['timeframe_analyses']:
+        base_tf = timeframes[-1] if timeframes[-1] in analysis['timeframe_analyses'] else list(analysis['timeframe_analyses'].keys())[0]
+
+    base_data = analysis['timeframe_analyses'][base_tf]
+    df = base_data['dataframe'].tail(100)
+
+    # Create figure with subplots (adding MACD as 4th subplot)
+    fig = make_subplots(
+        rows=4, cols=1,
+        shared_xaxes=True,
+        vertical_spacing=0.02,
+        row_heights=[0.5, 0.15, 0.15, 0.2],
+        subplot_titles=(f'{symbol} - Multi-Timeframe Support & Resistance', 'Volume', 'RSI', 'MACD')
+    )
+
+    # Add candlestick chart
+    fig.add_trace(
+        go.Candlestick(
+            x=df.index,
+            open=df['Open'],
+            high=df['High'],
+            low=df['Low'],
+            close=df['Close'],
+            name='Price'
+        ),
+        row=1, col=1
+    )
+
+    # Add moving averages
+    if 'MA_20' in df.columns:
+        fig.add_trace(
+            go.Scatter(x=df.index, y=df['MA_20'], name='MA 20',
+                      line=dict(color='orange', width=1)),
+            row=1, col=1
+        )
+    if 'MA_50' in df.columns:
+        fig.add_trace(
+            go.Scatter(x=df.index, y=df['MA_50'], name='MA 50',
+                      line=dict(color='blue', width=1)),
+            row=1, col=1
+        )
+
+    # Add support and resistance levels for each timeframe
+    # Collect all levels with metadata for smart positioning
+    all_levels = []
+
+    for tf_idx, tf in enumerate(timeframes):
+        if tf not in analysis['timeframe_analyses']:
+            continue
+
+        tf_data = analysis['timeframe_analyses'][tf]
+        colors = tf_colors[tf]
+
+        # Collect support levels
+        support_levels = tf_data.get('support_levels', [])[:4]
+        for i, level in enumerate(support_levels):
+            all_levels.append({
+                'price': level,
+                'tf': tf,
+                'type': 'S',
+                'number': i + 1,
+                'color': colors['line'],
+                'line_dash': 'dot',
+                'tf_idx': tf_idx
+            })
+
+        # Collect resistance levels
+        resistance_levels = tf_data.get('resistance_levels', [])[:4]
+        for i, level in enumerate(resistance_levels):
+            all_levels.append({
+                'price': level,
+                'tf': tf,
+                'type': 'R',
+                'number': i + 1,
+                'color': colors['line'],
+                'line_dash': 'dash',
+                'tf_idx': tf_idx
+            })
+
+    # Sort all levels by price
+    all_levels.sort(key=lambda x: x['price'])
+
+    # Smart positioning: alternate between left and right, with vertical stagger
+    # Group close levels and spread them out
+    for idx, level_info in enumerate(all_levels):
+        # Determine if this level is close to the previous one (within 0.1% range)
+        if idx > 0:
+            prev_price = all_levels[idx - 1]['price']
+            price_diff_pct = abs(level_info['price'] - prev_price) / prev_price * 100
+
+            # If levels are very close (< 0.1%), alternate left/right more aggressively
+            if price_diff_pct < 0.1:
+                # Use timeframe index to spread labels
+                if level_info['tf_idx'] % 2 == 0:
+                    position = "top right" if idx % 2 == 0 else "bottom right"
+                else:
+                    position = "top left" if idx % 2 == 0 else "bottom left"
+            else:
+                # Normal alternating pattern
+                positions_cycle = ["top left", "top right", "bottom left", "bottom right"]
+                position = positions_cycle[idx % 4]
+        else:
+            position = "top left"
+
+        # Draw the horizontal line with annotation
+        fig.add_hline(
+            y=level_info['price'],
+            line_dash=level_info['line_dash'],
+            line_color=level_info['color'],
+            opacity=0.6,
+            annotation_text=f"{level_info['tf'].upper()} {level_info['type']}{level_info['number']}: ${level_info['price']:.2f}",
+            annotation_position=position,
+            annotation_font_size=8,
+            annotation_font_color=level_info['color'],
+            annotation_bgcolor="rgba(255, 255, 255, 0.9)",
+            annotation_bordercolor=level_info['color'],
+            annotation_borderwidth=1,
+            annotation_borderpad=2,
+            row=1, col=1
+        )
+
+    # Add volume bars
+    colors_volume = ['red' if row['Close'] < row['Open'] else 'green'
+                     for idx, row in df.iterrows()]
+    fig.add_trace(
+        go.Bar(x=df.index, y=df['Volume'], name='Volume',
+               marker_color=colors_volume, showlegend=False),
+        row=2, col=1
+    )
+
+    # Add RSI
+    if 'RSI' in df.columns:
+        fig.add_trace(
+            go.Scatter(x=df.index, y=df['RSI'], name='RSI',
+                      line=dict(color='purple', width=2)),
+            row=3, col=1
+        )
+        # RSI levels
+        fig.add_hline(y=70, line_dash="dash", line_color="red",
+                     opacity=0.5, row=3, col=1)
+        fig.add_hline(y=30, line_dash="dash", line_color="green",
+                     opacity=0.5, row=3, col=1)
+
+    # Add MACD
+    if all(col in df.columns for col in ['MACD', 'MACD_Signal']):
+        # MACD Line
+        fig.add_trace(
+            go.Scatter(x=df.index, y=df['MACD'], name='MACD',
+                      line=dict(color='blue', width=2)),
+            row=4, col=1
+        )
+        # Signal Line
+        fig.add_trace(
+            go.Scatter(x=df.index, y=df['MACD_Signal'], name='Signal',
+                      line=dict(color='orange', width=2)),
+            row=4, col=1
+        )
+        # MACD Histogram
+        if 'MACD_Hist' in df.columns:
+            colors_macd = ['red' if val < 0 else 'green' for val in df['MACD_Hist']]
+            fig.add_trace(
+                go.Bar(x=df.index, y=df['MACD_Hist'], name='MACD Histogram',
+                       marker_color=colors_macd, showlegend=False, opacity=0.5),
+                row=4, col=1
+            )
+        # Zero line
+        fig.add_hline(y=0, line_dash="dash", line_color="gray",
+                     opacity=0.5, row=4, col=1)
+
+    # Update layout
+    fig.update_layout(
+        height=1100,
+        showlegend=True,
+        xaxis_rangeslider_visible=False,
+        hovermode='x unified',
+        margin=dict(l=80, r=150, t=80, b=60)  # Increased right margin for annotations
+    )
+
+    fig.update_yaxes(title_text="Price", row=1, col=1)
+    fig.update_yaxes(title_text="Volume", row=2, col=1)
+    fig.update_yaxes(title_text="RSI", row=3, col=1)
+    fig.update_yaxes(title_text="MACD", row=4, col=1)
+
+    return fig
+
+def create_sr_summary_table(analysis, timeframes=['15m', '1h', '4h']):
+    """Create a summary table of support and resistance levels ordered by value"""
+    table_data = []
+
+    for tf in timeframes:
+        if tf not in analysis['timeframe_analyses']:
+            continue
+
+        tf_data = analysis['timeframe_analyses'][tf]
+
+        # Add resistance levels
+        resistance_levels = tf_data.get('resistance_levels', [])[:4]
+        for i, level in enumerate(resistance_levels):
+            table_data.append({
+                'Type': 'Resistance',
+                'Timeframe': tf.upper(),
+                'Level': f'R{i+1}',
+                'Value': level,
+                'Value_Display': f'${level:.2f}'
+            })
+
+        # Add support levels
+        support_levels = tf_data.get('support_levels', [])[:4]
+        for i, level in enumerate(support_levels):
+            table_data.append({
+                'Type': 'Support',
+                'Timeframe': tf.upper(),
+                'Level': f'S{i+1}',
+                'Value': level,
+                'Value_Display': f'${level:.2f}'
+            })
+
+    # Sort by value descending (resistance first, then support)
+    # First sort by value descending
+    table_data.sort(key=lambda x: x['Value'], reverse=True)
+
+    # Create DataFrame
+    import pandas as pd
+    df_table = pd.DataFrame(table_data)
+
+    # Select and rename columns for display
+    if not df_table.empty:
+        df_display = df_table[['Type', 'Timeframe', 'Level', 'Value_Display']]
+        df_display.columns = ['Type', 'Timeframe', 'Level', 'Price']
+        return df_display
+    else:
+        return pd.DataFrame(columns=['Type', 'Timeframe', 'Level', 'Price'])
+
 def display_signal_badge(signal, confidence):
     """Display a colored signal badge"""
     if signal == 'BUY':
@@ -212,6 +515,16 @@ def main():
             st.write("4. 🌐 **Network/firewall issue** - Check internet connection")
             st.write("\n**Quick fix:** Stop Streamlit (Ctrl+C) and run again: `streamlit run app.py`")
 
+    # Check for navigation from Opportunities page
+    if st.session_state.get('nav_to_home', False):
+        url_symbol = st.session_state.get('nav_to_home_symbol', None)
+        # Clear the navigation flags
+        st.session_state.nav_to_home = False
+    else:
+        # Check for URL parameter
+        query_params = st.query_params
+        url_symbol = query_params.get("symbol", None)
+
     # Sidebar
     with st.sidebar:
         st.header("⚙️ Settings")
@@ -219,29 +532,70 @@ def main():
         # Symbol selection
         st.subheader("Select Symbol")
 
+        # If symbol is provided in URL or navigation, show it
+        if url_symbol:
+            st.info(f"📍 Viewing: {url_symbol}")
+            symbol = url_symbol
+            # Set default symbol type based on URL symbol
+            if '=' in url_symbol or 'USD' in url_symbol:
+                default_type = "Custom"
+            elif '/' in url_symbol:
+                default_type = "Crypto"
+            elif url_symbol in ['US30', 'US100']:
+                default_type = "Indices"
+            elif url_symbol in ['XAU_USD', 'XAG_USD']:
+                default_type = "Precious Metals"
+            else:
+                default_type = "Forex Pairs"
+        else:
+            default_type = "Forex Pairs"
+
         symbol_type = st.radio(
             "Asset Type",
-            ["Forex Pairs", "Precious Metals", "Custom"]
+            ["Forex Pairs", "Indices", "Crypto", "Precious Metals", "Custom"],
+            index=["Forex Pairs", "Indices", "Crypto", "Precious Metals", "Custom"].index(default_type)
         )
 
-        if symbol_type == "Forex Pairs":
-            symbol = st.selectbox(
-                "Forex Pair",
-                ['EURUSD=X', 'GBPUSD=X', 'USDJPY=X', 'AUDUSD=X',
-                 'USDCHF=X', 'NZDUSD=X', 'USDCAD=X']
-            )
-        elif symbol_type == "Precious Metals":
-            symbol = st.selectbox(
-                "Metal",
-                ['XAU_USD', 'XAG_USD'],
-                format_func=lambda x: {
-                    'XAU_USD': '🥇 Gold Spot (per oz)',
-                    'XAG_USD': '🥈 Silver Spot (per oz)'
-                }[x]
-            )
-            st.caption("💡 Using Oanda spot prices for real-time accuracy")
-        else:
-            symbol = st.text_input("Enter Symbol", "EURUSD=X")
+        # Only show selection if not from URL, otherwise use URL symbol
+        if not url_symbol:
+            if symbol_type == "Forex Pairs":
+                symbol = st.selectbox(
+                    "Forex Pair",
+                    ['EURUSD=X', 'GBPUSD=X', 'USDJPY=X', 'AUDUSD=X',
+                     'USDCHF=X', 'NZDUSD=X', 'USDCAD=X']
+                )
+            elif symbol_type == "Indices":
+                symbol = st.selectbox(
+                    "Index",
+                    ['US30', 'US100'],
+                    format_func=lambda x: {
+                        'US30': '📊 US30 (Dow Jones)',
+                        'US100': '📈 US100 (NASDAQ 100)'
+                    }[x]
+                )
+                st.caption("💡 US stock market indices")
+            elif symbol_type == "Crypto":
+                symbol = st.selectbox(
+                    "Cryptocurrency",
+                    ['BTC/USD', 'ETH/USD'],
+                    format_func=lambda x: {
+                        'BTC/USD': '₿ Bitcoin',
+                        'ETH/USD': 'Ξ Ethereum'
+                    }[x]
+                )
+                st.caption("💡 24/7 cryptocurrency markets")
+            elif symbol_type == "Precious Metals":
+                symbol = st.selectbox(
+                    "Metal",
+                    ['XAU_USD', 'XAG_USD'],
+                    format_func=lambda x: {
+                        'XAU_USD': '🥇 Gold Spot (per oz)',
+                        'XAG_USD': '🥈 Silver Spot (per oz)'
+                    }[x]
+                )
+                st.caption("💡 Using Oanda spot prices for real-time accuracy")
+            else:
+                symbol = st.text_input("Enter Symbol", "EURUSD=X")
 
         # Analysis options
         st.subheader("Analysis Options")
@@ -399,7 +753,6 @@ def main():
             refresh_button = st.button("🔄 Refresh Latest Data", use_container_width=True,
                                        help="Clear cache and fetch fresh data from market")
         else:
-            st.info("🔒 Data refresh requires admin privileges")
             refresh_button = False
 
         st.divider()
@@ -413,10 +766,34 @@ def main():
         if auth.has_permission(Permissions.TRAIN_MODEL):
             if st.button("🤖 Train ML Model", use_container_width=True):
                 st.session_state.page = 'training'
-        else:
-            st.button("🔒 Train ML Model (Admin Only)", use_container_width=True, disabled=True)
 
         st.divider()
+
+        # Cache statistics (collapsible)
+        with st.expander("📊 Cache Statistics", expanded=False):
+            try:
+                cache_stats = st.session_state.analyzer.get_cache_stats()
+
+                if 'error' not in cache_stats:
+                    col1, col2 = st.columns(2)
+
+                    with col1:
+                        st.metric("Fresh Entries", cache_stats.get('fresh_entries', 0))
+                        st.metric("Symbols Cached", cache_stats.get('symbols_cached', 0))
+
+                    with col2:
+                        st.metric("Total Entries", cache_stats.get('total_entries', 0))
+                        st.metric("Expired", cache_stats.get('expired_entries', 0))
+
+                    # Show preload stats if available
+                    if 'preload_stats' in st.session_state:
+                        preload = st.session_state.preload_stats
+                        st.caption(f"Preloaded on startup: {preload['success']} success, {preload['failed']} failed")
+                else:
+                    st.caption("In-memory cache not available")
+            except Exception as e:
+                st.caption(f"Error: {str(e)}")
+
         st.caption(f"Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
     # Handle refresh button
@@ -426,7 +803,12 @@ def main():
                 import shutil
                 cache_dir = 'data/cache'
 
-                # Clear cache for this symbol
+                # Clear in-memory cache for this symbol
+                if st.session_state.analyzer.data_fetcher.memory_cache:
+                    st.session_state.analyzer.data_fetcher.memory_cache.invalidate(symbol=symbol)
+                    logger.info(f"Cleared in-memory cache for {symbol}")
+
+                # Clear file cache for this symbol
                 if os.path.exists(cache_dir):
                     for file in os.listdir(cache_dir):
                         if symbol.replace('=', '_').replace('/', '_') in file:
@@ -453,9 +835,24 @@ def main():
             except Exception as e:
                 st.error(f"Error refreshing data: {str(e)}")
 
+    # Auto-trigger analysis if symbol is from URL/navigation and not already analyzed
+    auto_analyze = (url_symbol or st.session_state.get('auto_analyze_symbol')) and (
+        'analysis_result' not in st.session_state or
+        st.session_state.get('current_symbol') != (url_symbol or st.session_state.get('auto_analyze_symbol'))
+    )
+
+    # Clear auto analyze flag after checking
+    if 'auto_analyze_symbol' in st.session_state and auto_analyze:
+        # Keep the symbol for this run, will be cleared after analysis
+        pass
+
     # Main content
-    if analyze_button:
-        with st.spinner(f'Analyzing {symbol}...'):
+    if analyze_button or auto_analyze:
+        # Get cache stats before analysis
+        cache_stats_before = st.session_state.analyzer.get_cache_stats()
+        fresh_before = cache_stats_before.get('fresh_entries', 0)
+
+        with st.spinner(f'Analyzing {symbol}... ⚡ Using cached data when available'):
             try:
                 # Perform analysis
                 analysis = st.session_state.analyzer.analyze_pair(
@@ -467,8 +864,31 @@ def main():
                 st.session_state.analysis_result = analysis
                 st.session_state.current_symbol = symbol
 
+                # Check if data was served from cache
+                cache_stats_after = st.session_state.analyzer.get_cache_stats()
+                fresh_after = cache_stats_after.get('fresh_entries', 0)
+
+                if fresh_after == fresh_before + 4:  # All 4 timeframes were fetched fresh
+                    st.info("🔄 Fresh data fetched from market")
+                elif fresh_after > fresh_before:
+                    st.success(f"⚡ Analysis complete - {4 - (fresh_after - fresh_before)} timeframes served from cache (instant)")
+                else:
+                    st.success("⚡ Analysis complete - All data served from cache (instant response!)")
+
+                # Clear auto analyze flag after successful analysis
+                if 'auto_analyze_symbol' in st.session_state:
+                    del st.session_state.auto_analyze_symbol
+
+                # Extract and store opportunities
+                num_opps = add_opportunities_to_session(st.session_state, symbol, analysis)
+                if num_opps > 0:
+                    st.success(f"✅ Found {num_opps} trading opportunity(ies) - Check the 🎯 Opportunities page!")
+
             except Exception as e:
                 st.error(f"Error during analysis: {str(e)}")
+                # Clear auto analyze flag even on error
+                if 'auto_analyze_symbol' in st.session_state:
+                    del st.session_state.auto_analyze_symbol
                 return
 
     # Display results
@@ -1017,6 +1437,45 @@ def main():
 
         with tab2:
             st.subheader("Price Charts & Indicators")
+
+            # Add combined multi-timeframe support/resistance chart
+            st.markdown("### 🎯 Combined Multi-Timeframe Support & Resistance Levels")
+
+            # Create legend columns
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.markdown("**🟢 15-Minute Timeframe**")
+                st.caption("Dotted lines: Support (S1-S4)")
+                st.caption("Dashed lines: Resistance (R1-R4)")
+            with col2:
+                st.markdown("**🔵 1-Hour Timeframe**")
+                st.caption("Dotted lines: Support (S1-S4)")
+                st.caption("Dashed lines: Resistance (R1-R4)")
+            with col3:
+                st.markdown("**🟣 4-Hour Timeframe**")
+                st.caption("Dotted lines: Support (S1-S4)")
+                st.caption("Dashed lines: Resistance (R1-R4)")
+
+            combined_fig = create_combined_sr_chart(analysis, st.session_state.current_symbol)
+            st.plotly_chart(combined_fig, use_container_width=True)
+
+            # Add summary table
+            st.markdown("### 📋 Support & Resistance Levels Summary")
+            st.caption("All levels sorted by price (highest to lowest)")
+            sr_table = create_sr_summary_table(analysis)
+
+            # Style the table with colors
+            def highlight_type(row):
+                if row['Type'] == 'Resistance':
+                    return ['background-color: rgba(255, 100, 100, 0.2)'] * len(row)
+                else:
+                    return ['background-color: rgba(100, 255, 100, 0.2)'] * len(row)
+
+            styled_table = sr_table.style.apply(highlight_type, axis=1)
+            st.dataframe(styled_table, use_container_width=True, hide_index=True)
+
+            st.markdown("---")
+            st.markdown("### 📊 Individual Timeframe Charts")
 
             # Show charts for each timeframe
             timeframes = ['1d', '4h']  # Show main timeframes

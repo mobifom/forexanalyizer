@@ -16,6 +16,11 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from src.forex_analyzer import ForexAnalyzer
 from src.auth.authentication_db import AuthenticatorDB, Permissions
+from src.utils.opportunities import add_opportunities_to_session
+from src.database.signals_db import SignalsDB
+from src.database.analysis_db import AnalysisDB
+from src.utils.signal_display import SignalDisplayFormatter
+from datetime import datetime, timedelta
 
 st.set_page_config(page_title="Multi-Pair Scanner", page_icon="📊", layout="wide")
 
@@ -44,6 +49,14 @@ st.markdown("Scan multiple assets simultaneously to find the best trading opport
 if 'analyzer' not in st.session_state:
     st.session_state.analyzer = ForexAnalyzer()
 
+# Initialize signals database
+if 'signals_db' not in st.session_state:
+    st.session_state.signals_db = SignalsDB('data/signals.db')
+
+# Initialize analysis database
+if 'analysis_db' not in st.session_state:
+    st.session_state.analysis_db = AnalysisDB('data/analysis.db')
+
 # Sidebar
 with st.sidebar:
     st.header("Scanner Settings")
@@ -51,27 +64,48 @@ with st.sidebar:
     # Preset selections
     scan_type = st.radio(
         "Quick Select",
-        ["Forex Major Pairs", "Precious Metals", "All Assets", "Custom"]
+        ["Forex Major Pairs", "Indices", "Crypto", "Precious Metals", "All Assets", "Custom"]
     )
 
     if scan_type == "Forex Major Pairs":
         selected_symbols = ['EURUSD=X', 'GBPUSD=X', 'USDJPY=X', 'AUDUSD=X']
+    elif scan_type == "Indices":
+        selected_symbols = ['US30', 'US100']
+    elif scan_type == "Crypto":
+        selected_symbols = ['BTC/USD', 'ETH/USD']
     elif scan_type == "Precious Metals":
         selected_symbols = ['XAU_USD', 'XAG_USD']
     elif scan_type == "All Assets":
-        selected_symbols = ['EURUSD=X', 'GBPUSD=X', 'USDJPY=X', 'AUDUSD=X', 'XAU_USD', 'XAG_USD']
+        selected_symbols = [
+            'EURUSD=X', 'GBPUSD=X', 'USDJPY=X', 'AUDUSD=X',
+            'XAU_USD', 'XAG_USD',
+            'US30', 'US100',
+            'BTC/USD', 'ETH/USD'
+        ]
     else:
         # Custom selection
         available_symbols = {
-            'Forex': ['EURUSD=X', 'GBPUSD=X', 'USDJPY=X', 'AUDUSD=X', 'USDCHF=X', 'NZDUSD=X', 'USDCAD=X'],
-            'Metals': ['XAU_USD', 'XAG_USD']
+            '💱 Forex': ['EURUSD=X', 'GBPUSD=X', 'USDJPY=X', 'AUDUSD=X', 'USDCHF=X', 'NZDUSD=X', 'USDCAD=X'],
+            '📊 Indices': ['US30', 'US100'],
+            '₿ Crypto': ['BTC/USD', 'ETH/USD'],
+            '🥇 Metals': ['XAU_USD', 'XAG_USD']
         }
 
         selected_symbols = []
         for category, symbols in available_symbols.items():
             st.markdown(f"**{category}**")
             for symbol in symbols:
-                if st.checkbox(symbol, key=symbol):
+                display_name = symbol
+                if symbol == 'US30':
+                    display_name = 'US30 (Dow Jones)'
+                elif symbol == 'US100':
+                    display_name = 'US100 (NASDAQ 100)'
+                elif symbol == 'BTC/USD':
+                    display_name = 'BTC/USD (Bitcoin)'
+                elif symbol == 'ETH/USD':
+                    display_name = 'ETH/USD (Ethereum)'
+
+                if st.checkbox(display_name, key=symbol):
                     selected_symbols.append(symbol)
 
     st.divider()
@@ -151,8 +185,12 @@ with st.sidebar:
 
     scan_button = st.button("🔍 Scan All", type="primary", use_container_width=True)
 
-    refresh_all_button = st.button("🔄 Refresh All Data", use_container_width=True,
-                                   help="Clear cache and fetch fresh data for all selected symbols")
+    # Refresh button (admin only)
+    if auth.has_permission(Permissions.REFRESH_DATA):
+        refresh_all_button = st.button("🔄 Refresh All Data", use_container_width=True,
+                                       help="Clear cache and fetch fresh data for all selected symbols")
+    else:
+        refresh_all_button = False
 
 # Handle refresh all button
 if refresh_all_button:
@@ -178,23 +216,35 @@ if refresh_all_button:
                         except:
                             pass
 
+        # Clear in-memory cache for selected symbols
+        for symbol in selected_symbols:
+            if fetcher.memory_cache:
+                fetcher.memory_cache.invalidate(symbol=symbol)
+
         # Fetch fresh data for each symbol
         progress_bar = st.progress(0)
         status_text = st.empty()
 
         for idx, symbol in enumerate(selected_symbols):
-            status_text.text(f"Refreshing {symbol}...")
+            status_text.text(f"Fetching fresh data for {symbol}... (bypassing cache)")
 
             try:
                 for tf in ['1d', '4h', '1h', '15m']:
-                    fetcher.fetch_data(symbol, tf)
-                st.success(f"✅ {symbol} - Data refreshed")
+                    # Use use_cache=True but cache is already invalidated, so it will fetch fresh
+                    # and then cache the new data for future use
+                    df = fetcher.fetch_data(symbol, tf, use_cache=True, use_snapshot=False)
+                    if df is not None and len(df) > 0:
+                        # Data is now cached for future use
+                        pass
+                st.success(f"✅ {symbol} - Fresh data fetched and cached")
             except Exception as e:
                 st.error(f"❌ {symbol} - Error: {str(e)}")
 
             progress_bar.progress((idx + 1) / len(selected_symbols))
 
-        status_text.text("✅ All data refreshed!")
+        # Show final cache stats
+        cache_stats = st.session_state.analyzer.get_cache_stats()
+        status_text.text(f"✅ All data refreshed! Cache: {cache_stats.get('fresh_entries', 0)} entries")
         st.success("Ready to scan with latest market data!")
 
 # Main content
@@ -211,7 +261,11 @@ if scan_button:
         status_text = st.empty()
 
         for idx, symbol in enumerate(selected_symbols):
-            status_text.text(f"Analyzing {symbol}...")
+            # Get cache stats before analysis
+            cache_stats_before = st.session_state.analyzer.get_cache_stats()
+            fresh_before = cache_stats_before.get('fresh_entries', 0)
+
+            status_text.text(f"Analyzing {symbol}... ⚡ Using cached data")
 
             try:
                 analysis = st.session_state.analyzer.analyze_pair(
@@ -219,6 +273,25 @@ if scan_button:
                     account_balance=account_balance,
                     use_ml=use_ml
                 )
+
+                # Check if data was served from cache
+                cache_stats_after = st.session_state.analyzer.get_cache_stats()
+                fresh_after = cache_stats_after.get('fresh_entries', 0)
+
+                if fresh_after == fresh_before + 4:  # All 4 timeframes were fetched fresh
+                    cache_status = "🔄 Fresh data fetched"
+                elif fresh_after > fresh_before:
+                    cache_status = f"⚡ Partial cache ({fresh_after - fresh_before} fresh)"
+                else:
+                    cache_status = "⚡ Served from cache (instant)"
+
+                # Extract and store opportunities
+                if 'error' not in analysis:
+                    add_opportunities_to_session(st.session_state, symbol, analysis)
+
+                    # Show cache status as success message
+                    if 'cache_status' in locals():
+                        st.success(f"✅ {symbol} - {cache_status}")
 
                 if 'error' not in analysis:
                     if timeframe_mode == "Multi-Timeframe View":
@@ -364,6 +437,11 @@ if scan_button:
 
             if timeframe_mode == "Multi-Timeframe View":
                 st.success(f"✅ Scan complete! Analyzed {len(selected_symbols)} symbols across {len(df)} timeframe entries")
+
+                # Show opportunities notification
+                if 'opportunities' in st.session_state and len(st.session_state.opportunities) > 0:
+                    total_opps = len(st.session_state.opportunities)
+                    st.info(f"🎯 {total_opps} trading opportunities available - Check the **🎯 Opportunities** page!")
 
                 # Summary metrics
                 col1, col2, col3, col4 = st.columns(4)
@@ -697,6 +775,356 @@ if scan_button:
 else:
     st.info("👈 Select symbols from the sidebar and click **Scan All** to begin")
 
+# V2 Recommendations Section
+st.divider()
+st.header("🎯 V2 Recommendations")
+
+# Show active filters
+filter_text = f"**Filters**: Asset Type: {scan_type}"
+if timeframe_mode == "Single Timeframe":
+    filter_text += f" | Timeframe: {selected_timeframe.upper()}"
+else:
+    filter_text += f" | Timeframe: All"
+st.markdown(filter_text)
+
+# Check if database has any signals
+all_available_signals = st.session_state.signals_db.get_signals(limit=1, active_only=True)
+if all_available_signals:
+    total_signals = st.session_state.signals_db.get_stats().get('total_active_signals', 0)
+    st.success(f"✅ Database contains {total_signals} active recommendation(s). Select assets from sidebar to view.")
+else:
+    st.warning("⚠️ No recommendations in database yet. Run an analysis first.")
+
+st.markdown("---")
+
+# Determine which assets to display based on sidebar
+assets_to_display = []
+
+if selected_symbols and len(selected_symbols) > 0:
+    # Use sidebar selections
+    assets_to_display = selected_symbols
+    st.info(f"📊 Showing recommendations for {len(selected_symbols)} selected asset(s)")
+else:
+    # No sidebar selection - find all assets with stored data
+    all_symbols = [
+        'EURUSD=X', 'GBPUSD=X', 'USDJPY=X', 'AUDUSD=X', 'USDCHF=X', 'NZDUSD=X', 'USDCAD=X',
+        'XAU_USD', 'XAG_USD',
+        'US30', 'US100',
+        'BTC/USD', 'ETH/USD'
+    ]
+
+    # Filter to only show assets with stored data
+    for symbol in all_symbols:
+        signals = st.session_state.signals_db.get_signals(
+            asset_symbol=symbol,
+            limit=1,
+            active_only=True
+        )
+        if signals:
+            assets_to_display.append(symbol)
+
+    if assets_to_display:
+        st.info(f"📊 Showing all assets with stored recommendations ({len(assets_to_display)} found)")
+    else:
+        st.warning("⚠️ No stored recommendations found. Run an analysis first.")
+
+# Display recommendations for each asset
+if assets_to_display:
+    for idx, asset_symbol in enumerate(assets_to_display):
+        with st.container():
+            st.subheader(f"📈 {asset_symbol}")
+
+            # Get signals based on timeframe mode
+            if timeframe_mode == "Single Timeframe" and selected_timeframe:
+                # Single timeframe - filter by selected timeframe
+                signals = st.session_state.signals_db.get_signals(
+                    asset_symbol=asset_symbol,
+                    timeframe=selected_timeframe,
+                    limit=20,
+                    active_only=True
+                )
+
+                if signals:
+                    signals_by_tf = {selected_timeframe: signals}
+                else:
+                    signals_by_tf = {}
+            else:
+                # Multi-timeframe - get all timeframes
+                signals_by_tf = st.session_state.signals_db.get_signals_by_timeframe(
+                    asset_symbol=asset_symbol,
+                    limit_per_timeframe=20,
+                    active_only=True
+                )
+
+            # Display summary card
+            if signals_by_tf:
+                SignalDisplayFormatter.create_signals_summary_card(signals_by_tf, asset_symbol)
+                st.divider()
+
+                # Create tabs for each timeframe
+                available_tfs = list(signals_by_tf.keys())
+
+                if len(available_tfs) == 1:
+                    # Single timeframe - display directly
+                    tf = available_tfs[0]
+                    signal_count = len(signals_by_tf[tf])
+                    st.markdown(f"**{tf.upper()} Timeframe** - Showing Last {signal_count} Signal{'s' if signal_count != 1 else ''} (max 20)")
+
+                    # Display the signal table
+                    SignalDisplayFormatter.display_signal_table(
+                        signals_by_tf[tf],
+                        tf,
+                        None  # No custom title, using markdown above
+                    )
+
+                    # Show detailed view for most recent recommendation
+                    if signals_by_tf[tf]:
+                        with st.expander("📋 View Latest Recommendation Details", expanded=False):
+                            SignalDisplayFormatter.display_signal_details(signals_by_tf[tf][0])
+                else:
+                    # Multiple timeframes - use tabs
+                    tab_labels = [f"{tf.upper()} - Last {len(signals_by_tf[tf])} signals" for tf in available_tfs]
+                    tabs = st.tabs(tab_labels)
+
+                    for tf_idx, tf in enumerate(available_tfs):
+                        with tabs[tf_idx]:
+                            signal_count = len(signals_by_tf[tf])
+                            st.caption(f"Showing last {signal_count} signal{'s' if signal_count != 1 else ''} (max 20 per timeframe)")
+
+                            # Display the signal table
+                            SignalDisplayFormatter.display_signal_table(
+                                signals_by_tf[tf],
+                                tf,
+                                None  # Title shown in tab
+                            )
+
+                            # Show detailed view for most recent recommendation
+                            if signals_by_tf[tf]:
+                                with st.expander("📋 View Latest Recommendation Details", expanded=False):
+                                    SignalDisplayFormatter.display_signal_details(signals_by_tf[tf][0])
+            else:
+                # No signals found
+                if timeframe_mode == "Single Timeframe" and selected_timeframe:
+                    st.info(f"💡 No recommendations for {asset_symbol} on **{selected_timeframe.upper()}** timeframe. Try a different timeframe or run analysis.")
+                else:
+                    st.info(f"💡 No recommendations for {asset_symbol}. Run an analysis to generate recommendations.")
+
+            # Add spacing between assets
+            if idx < len(assets_to_display) - 1:
+                st.markdown("---")
+else:
+    # This message only shows if assets_to_display is empty but we already showed warning above
+    pass
+
+st.divider()
+
+# ============================================================================
+# 📈 ANALYSIS HISTORY SECTION
+# ============================================================================
+
+st.header("📈 Analysis History")
+st.markdown("View historical analysis results stored in the database")
+
+# Get database stats
+analysis_stats = st.session_state.analysis_db.get_stats()
+total_analyses = analysis_stats.get('total_analyses', 0)
+latest_analyses = analysis_stats.get('latest_analyses', 0)
+
+col1, col2, col3 = st.columns(3)
+with col1:
+    st.metric("Total Analyses Stored", total_analyses)
+with col2:
+    st.metric("Current (Latest) Analyses", latest_analyses)
+with col3:
+    changes_24h = analysis_stats.get('recent_changes_24h', 0)
+    st.metric("Changes in Last 24h", changes_24h)
+
+if total_analyses > 0:
+    # Filters
+    st.subheader("🔍 Filters")
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+        # Get all assets that have analyses
+        conn = st.session_state.analysis_db._get_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT DISTINCT asset_symbol FROM analysis_results ORDER BY asset_symbol')
+        available_assets = [row[0] for row in cursor.fetchall()]
+        conn.close()
+
+        filter_asset = st.selectbox(
+            "Select Asset",
+            ["All Assets"] + available_assets,
+            key="history_asset_filter"
+        )
+
+    with col2:
+        filter_timeframe = st.selectbox(
+            "Select Timeframe",
+            ["All Timeframes", "1d", "4h", "1h", "15m"],
+            key="history_timeframe_filter"
+        )
+
+    with col3:
+        filter_days = st.slider(
+            "Days to Look Back",
+            min_value=1,
+            max_value=30,
+            value=7,
+            key="history_days_filter"
+        )
+
+    with col4:
+        show_latest_only = st.checkbox(
+            "Latest Only",
+            value=False,
+            help="Show only the most recent analysis for each asset/timeframe",
+            key="history_latest_only"
+        )
+
+    # Fetch historical data
+    if filter_asset != "All Assets":
+        if filter_timeframe != "All Timeframes":
+            # Specific asset and timeframe
+            history_data = st.session_state.analysis_db.get_analysis_history(
+                filter_asset,
+                filter_timeframe,
+                filter_days
+            )
+        else:
+            # Specific asset, all timeframes
+            conn = st.session_state.analysis_db._get_connection()
+            cursor = conn.cursor()
+
+            since_date = (datetime.now() - timedelta(days=filter_days)).isoformat()
+
+            query = '''
+                SELECT * FROM analysis_results
+                WHERE asset_symbol = ? AND created_at >= ?
+            '''
+            params = [filter_asset, since_date]
+
+            if show_latest_only:
+                query += ' AND is_latest = 1'
+
+            query += ' ORDER BY created_at DESC'
+
+            cursor.execute(query, params)
+            columns = [description[0] for description in cursor.description]
+            rows = cursor.fetchall()
+            conn.close()
+
+            history_data = [dict(zip(columns, row)) for row in rows]
+    else:
+        # All assets
+        conn = st.session_state.analysis_db._get_connection()
+        cursor = conn.cursor()
+
+        since_date = (datetime.now() - timedelta(days=filter_days)).isoformat()
+
+        query = 'SELECT * FROM analysis_results WHERE created_at >= ?'
+        params = [since_date]
+
+        if filter_timeframe != "All Timeframes":
+            query += ' AND timeframe = ?'
+            params.append(filter_timeframe)
+
+        if show_latest_only:
+            query += ' AND is_latest = 1'
+
+        query += ' ORDER BY created_at DESC LIMIT 100'
+
+        cursor.execute(query, params)
+        columns = [description[0] for description in cursor.description]
+        rows = cursor.fetchall()
+        conn.close()
+
+        history_data = [dict(zip(columns, row)) for row in rows]
+
+    # Display results
+    if history_data:
+        st.success(f"📊 Found **{len(history_data)}** analysis record(s)")
+
+        # Prepare data for display
+        display_data = []
+        for record in history_data:
+            # Format timestamp
+            try:
+                dt = datetime.fromisoformat(record['created_at'])
+                timestamp = dt.strftime('%Y-%m-%d %H:%M:%S')
+            except:
+                timestamp = record['created_at']
+
+            # Get signal emoji
+            signal = record.get('consensus', 'HOLD')
+            if signal == 'BUY':
+                signal_display = '🟢 BUY'
+            elif signal == 'SELL':
+                signal_display = '🔴 SELL'
+            else:
+                signal_display = '⚪ HOLD'
+
+            # Format reversal
+            reversal = ''
+            if record.get('reversal_detected'):
+                reversal = f"⚠️ {record.get('reversal_type', 'REVERSAL')}"
+
+            display_data.append({
+                'Timestamp': timestamp,
+                'Asset': record['asset_symbol'],
+                'TF': record['timeframe'],
+                'Signal': signal_display,
+                'Confidence': f"{record.get('confidence', 0):.1%}",
+                'Price': f"${record.get('price', 0):.5f}" if record.get('price') else 'N/A',
+                'RSI': f"{record.get('rsi', 0):.1f}" if record.get('rsi') else 'N/A',
+                'Trend': f"{record.get('trend_strength', 0):.1%}" if record.get('trend_strength') else 'N/A',
+                'Momentum': record.get('momentum', 'N/A'),
+                'Reversal': reversal,
+                'Latest': '✅' if record.get('is_latest') else ''
+            })
+
+        # Display as dataframe
+        df = pd.DataFrame(display_data)
+
+        st.dataframe(
+            df,
+            use_container_width=True,
+            hide_index=True,
+            height=400
+        )
+
+        # Show signal distribution
+        if len(history_data) > 1:
+            st.subheader("📊 Signal Distribution")
+            signal_dist = analysis_stats.get('signal_distribution', {})
+            if signal_dist:
+                col1, col2, col3 = st.columns(3)
+                total = sum(signal_dist.values())
+
+                with col1:
+                    buy_count = signal_dist.get('BUY', 0)
+                    buy_pct = (buy_count / total * 100) if total > 0 else 0
+                    st.metric("🟢 BUY Signals", f"{buy_count} ({buy_pct:.1f}%)")
+
+                with col2:
+                    sell_count = signal_dist.get('SELL', 0)
+                    sell_pct = (sell_count / total * 100) if total > 0 else 0
+                    st.metric("🔴 SELL Signals", f"{sell_count} ({sell_pct:.1f}%)")
+
+                with col3:
+                    hold_count = signal_dist.get('HOLD', 0)
+                    hold_pct = (hold_count / total * 100) if total > 0 else 0
+                    st.metric("⚪ HOLD Signals", f"{hold_count} ({hold_pct:.1f}%)")
+    else:
+        st.info("📭 No analysis records found for the selected filters. Try adjusting the filters or run some analyses first.")
+
+else:
+    st.info("📭 No analysis data available. Run some analyses to populate the history.")
+
+st.divider()
+
+if not scan_button:
     st.markdown("""
     ### How to Use the Scanner
 

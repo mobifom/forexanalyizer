@@ -228,9 +228,124 @@ class MultiTimeframeAnalyzer:
 
         return results
 
+    def _apply_signal_controls(self, analyses: Dict[str, Dict]) -> Dict[str, Dict]:
+        """
+        Apply enhanced signal controls to filter and adjust signals
+
+        Args:
+            analyses: Dictionary of timeframe analyses
+
+        Returns:
+            Filtered and adjusted analyses
+        """
+        signal_control = self.config.get('signal_control', {})
+
+        # Get control settings
+        min_conf_by_tf = signal_control.get('min_confidence_by_timeframe', {})
+        require_higher_tf = signal_control.get('require_higher_tf_confirmation', True)
+        confirmation_rules = signal_control.get('confirmation_rules', {})
+        momentum_settings = signal_control.get('momentum', {})
+        reversal_settings = signal_control.get('reversal', {})
+        strength_settings = signal_control.get('strength', {})
+
+        filtered_analyses = {}
+
+        for tf, analysis in analyses.items():
+            if not analysis:
+                continue
+
+            # Make a copy to modify
+            filtered_analysis = analysis.copy()
+
+            # 1. Check minimum confidence threshold for this timeframe
+            min_confidence = min_conf_by_tf.get(tf, 0.5)
+            current_confidence = analysis.get('signal_confidence', 0.5)
+
+            if current_confidence < min_confidence:
+                logger.info(f"{tf}: Signal confidence {current_confidence:.2f} below threshold {min_confidence:.2f}, setting to HOLD")
+                filtered_analysis['enhanced_signal'] = 'HOLD'
+                filtered_analysis['signal_confidence'] = current_confidence
+                filtered_analysis['filtered_reason'] = f'Below {tf} confidence threshold'
+
+            # 2. Check minimum indicators agreement
+            min_indicators = strength_settings.get('min_indicators_agree', 3)
+            signals = analysis.get('signals', {})
+            signal_counts = {
+                'BUY': sum(1 for s in signals.values() if s == 'BUY'),
+                'SELL': sum(1 for s in signals.values() if s == 'SELL'),
+                'HOLD': sum(1 for s in signals.values() if s == 'HOLD')
+            }
+
+            current_signal = filtered_analysis.get('enhanced_signal', 'HOLD')
+            if current_signal != 'HOLD' and signal_counts.get(current_signal, 0) < min_indicators:
+                logger.info(f"{tf}: Only {signal_counts.get(current_signal, 0)} indicators agree, need {min_indicators}, setting to HOLD")
+                filtered_analysis['enhanced_signal'] = 'HOLD'
+                filtered_analysis['filtered_reason'] = f'Insufficient indicator agreement'
+
+            # 3. Check momentum filter
+            if momentum_settings.get('enable_momentum_filter', True):
+                min_momentum = momentum_settings.get('min_momentum_strength', 0.5)
+                trend_momentum = analysis.get('trend_momentum', {})
+                momentum_score = trend_momentum.get('momentum_score', 0.5)
+
+                if momentum_score < min_momentum and current_signal != 'HOLD':
+                    logger.info(f"{tf}: Momentum {momentum_score:.2f} below threshold {min_momentum:.2f}")
+                    filtered_analysis['signal_confidence'] *= 0.7  # Reduce confidence
+
+            # 4. Apply reversal detection downgrade/block
+            if reversal_settings.get('enable_reversal_detection', True):
+                reversal_action = reversal_settings.get('reversal_warning_action', 'downgrade')
+                reversal = analysis.get('reversal_detection', {})
+
+                if reversal.get('is_reversal', False):
+                    if reversal_action == 'block':
+                        logger.info(f"{tf}: Reversal detected, blocking signal")
+                        filtered_analysis['enhanced_signal'] = 'HOLD'
+                        filtered_analysis['filtered_reason'] = 'Reversal detected'
+                    elif reversal_action == 'downgrade':
+                        downgrade_factor = reversal_settings.get('downgrade_factor', 0.5)
+                        filtered_analysis['signal_confidence'] *= downgrade_factor
+                        logger.info(f"{tf}: Reversal detected, confidence downgraded by {downgrade_factor}")
+
+            filtered_analyses[tf] = filtered_analysis
+
+        # 5. Apply higher timeframe confirmation requirements
+        if require_higher_tf:
+            for tf, analysis in list(filtered_analyses.items()):
+                rule_key = f'{tf}_requires'
+                required_tfs = confirmation_rules.get(rule_key, [])
+
+                if not required_tfs:
+                    continue  # No confirmation needed
+
+                current_signal = analysis.get('enhanced_signal', 'HOLD')
+                if current_signal == 'HOLD':
+                    continue  # No need to check if already HOLD
+
+                # Check if at least one required timeframe confirms
+                confirmed = False
+                for req_tf in required_tfs:
+                    if req_tf in filtered_analyses:
+                        req_signal = filtered_analyses[req_tf].get('enhanced_signal', 'HOLD')
+                        # Consider both exact match or at least not opposite
+                        if req_signal == current_signal:
+                            confirmed = True
+                            break
+                        elif req_signal == 'HOLD':
+                            # HOLD is neutral, can be partial confirmation
+                            confirmed = True  # Allow if not opposite
+                            break
+
+                if not confirmed:
+                    logger.info(f"{tf}: {current_signal} signal not confirmed by required timeframes {required_tfs}, setting to HOLD")
+                    filtered_analyses[tf]['enhanced_signal'] = 'HOLD'
+                    filtered_analyses[tf]['filtered_reason'] = f'No confirmation from {required_tfs}'
+
+        return filtered_analyses
+
     def get_timeframe_consensus(self, analyses: Dict[str, Dict]) -> Dict:
         """
-        Get consensus across all timeframes
+        Get consensus across all timeframes with enhanced controls
 
         Args:
             analyses: Dictionary of timeframe analyses
@@ -245,6 +360,9 @@ class MultiTimeframeAnalyzer:
                 'total_timeframes': 0,
                 'confidence': 0.0
             }
+
+        # Apply enhanced signal controls
+        filtered_analyses = self._apply_signal_controls(analyses)
 
         # Count signals across all timeframes
         buy_count = 0
@@ -262,16 +380,20 @@ class MultiTimeframeAnalyzer:
         weighted_buy = 0.0
         weighted_sell = 0.0
 
-        # NEW: Track timeframes with reversals for additional context
+        # Track timeframes with reversals for additional context
         reversals_detected = []
+        filtered_reasons = {}
 
-        for tf, analysis in analyses.items():
+        for tf, analysis in filtered_analyses.items():
             weight = timeframe_weights.get(tf, 0.1)
 
-            # NEW: Use enhanced signal instead of just indicator signals
-            # This considers historical momentum and reversals
-            enhanced_signal = analysis.get('enhanced_signal', analysis.get('current_consensus', 'HOLD'))
+            # Use enhanced signal with applied controls
+            enhanced_signal = analysis.get('enhanced_signal', 'HOLD')
             signal_confidence = analysis.get('signal_confidence', 0.5)
+
+            # Track filtering reasons
+            if 'filtered_reason' in analysis:
+                filtered_reasons[tf] = analysis['filtered_reason']
 
             # Apply confidence weighting (stronger signals get more weight)
             confidence_weight = weight * signal_confidence
@@ -294,21 +416,55 @@ class MultiTimeframeAnalyzer:
             else:
                 hold_count += 1
 
-        # Determine consensus
-        total_timeframes = len(analyses)
+        # Determine consensus with conflict resolution
+        total_timeframes = len(filtered_analyses)
+        signal_control = self.config.get('signal_control', {})
+        conflict_mode = signal_control.get('conflict_resolution', {}).get('mode', 'weighted_priority')
+        min_timeframes_agree = self.config.get('confluence', {}).get('min_timeframes_agree', 2)
+        min_confidence = self.config.get('confluence', {}).get('min_confidence', 0.5)
 
-        if weighted_buy > weighted_sell and buy_count >= self.config.get('confluence', {}).get('min_timeframes_agree', 3):
-            consensus = 'BUY'
-            agreement_count = buy_count
-            confidence = weighted_buy
-        elif weighted_sell > weighted_buy and sell_count >= self.config.get('confluence', {}).get('min_timeframes_agree', 3):
-            consensus = 'SELL'
-            agreement_count = sell_count
-            confidence = weighted_sell
-        else:
+        if conflict_mode == 'conservative':
+            # Conservative: require clear majority
+            if buy_count > sell_count + 1 and buy_count >= min_timeframes_agree and weighted_buy >= min_confidence:
+                consensus = 'BUY'
+                agreement_count = buy_count
+                confidence = weighted_buy
+            elif sell_count > buy_count + 1 and sell_count >= min_timeframes_agree and weighted_sell >= min_confidence:
+                consensus = 'SELL'
+                agreement_count = sell_count
+                confidence = weighted_sell
+            else:
+                consensus = 'HOLD'
+                agreement_count = hold_count
+                confidence = 0.5
+
+        elif conflict_mode == 'higher_tf_wins':
+            # Higher timeframe wins: check 1d first, then 4h, then 1h, then 15m
             consensus = 'HOLD'
-            agreement_count = hold_count
             confidence = 0.5
+            agreement_count = hold_count
+            for tf in ['1d', '4h', '1h', '15m']:
+                if tf in filtered_analyses:
+                    signal = filtered_analyses[tf].get('enhanced_signal', 'HOLD')
+                    if signal != 'HOLD':
+                        consensus = signal
+                        confidence = filtered_analyses[tf].get('signal_confidence', 0.5)
+                        agreement_count = buy_count if signal == 'BUY' else sell_count
+                        break
+
+        else:  # weighted_priority (default)
+            if weighted_buy > weighted_sell and buy_count >= min_timeframes_agree and weighted_buy >= min_confidence:
+                consensus = 'BUY'
+                agreement_count = buy_count
+                confidence = weighted_buy
+            elif weighted_sell > weighted_buy and sell_count >= min_timeframes_agree and weighted_sell >= min_confidence:
+                consensus = 'SELL'
+                agreement_count = sell_count
+                confidence = weighted_sell
+            else:
+                consensus = 'HOLD'
+                agreement_count = hold_count
+                confidence = 0.5
 
         return {
             'consensus': consensus,
@@ -318,8 +474,10 @@ class MultiTimeframeAnalyzer:
             'buy_timeframes': buy_count,
             'sell_timeframes': sell_count,
             'hold_timeframes': hold_count,
-            'reversals_detected': reversals_detected,  # NEW: List of detected reversals
-            'has_reversal_warning': len(reversals_detected) > 0  # NEW: Quick check
+            'reversals_detected': reversals_detected,
+            'has_reversal_warning': len(reversals_detected) > 0,
+            'filtered_reasons': filtered_reasons,  # NEW: Why signals were filtered
+            'conflict_mode': conflict_mode  # NEW: Which mode was used
         }
 
     def get_detailed_report(self, analyses: Dict[str, Dict]) -> str:

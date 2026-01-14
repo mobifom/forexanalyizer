@@ -373,19 +373,6 @@ class AuthenticatorDB:
 
             st.markdown('</div>', unsafe_allow_html=True)
 
-            # Show default credentials for demo
-            st.info("""
-            **Demo Credentials:**
-
-            👤 **Admin Account:**
-            - Username: `admin`
-            - Password: `admin123`
-
-            👤 **User Account:**
-            - Username: `user`
-            - Password: `user123`
-            """)
-
     def render_user_info(self):
         """Render user info in sidebar"""
         if self.is_authenticated():
@@ -395,13 +382,21 @@ class AuthenticatorDB:
             st.sidebar.write(f"**Username:** {self.get_current_user()}")
 
             role = self.get_current_role()
-            role_emoji = "👑" if role == Role.ADMIN else "👤"
-            role_color = "#28a745" if role == Role.ADMIN else "#17a2b8"
+
+            # Handle None role gracefully
+            if role:
+                role_emoji = "👑" if role == Role.ADMIN else "👤"
+                role_color = "#28a745" if role == Role.ADMIN else "#17a2b8"
+                role_display = role.upper()
+            else:
+                role_emoji = "👤"
+                role_color = "#6c757d"
+                role_display = "USER"
 
             st.sidebar.markdown(
                 f'<div style="background-color: {role_color}; color: white; '
                 f'padding: 0.5rem; border-radius: 5px; text-align: center;">'\
-                f'{role_emoji} <b>{role.upper()}</b></div>',
+                f'{role_emoji} <b>{role_display}</b></div>',
                 unsafe_allow_html=True
             )
 

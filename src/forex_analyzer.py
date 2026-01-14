@@ -15,6 +15,9 @@ from .analysis.multi_timeframe import MultiTimeframeAnalyzer
 from .ml.prediction_model import ForexMLModel, EnsembleVoting
 from .risk.risk_manager import RiskManager
 from .utils.config_loader import load_config, get_default_config
+from .utils.api_key_rotator import APIKeyRotator, load_api_keys_from_config
+from .database.signals_db import SignalsDB
+from .database.analysis_db import AnalysisDB
 
 logging.basicConfig(
     level=logging.INFO,
@@ -42,18 +45,42 @@ class ForexAnalyzer:
             self.config = get_default_config()
 
         # Get API keys from config or environment variables
-        twelvedata_key = self.config.get('twelvedata', {}).get('api_key') or os.getenv('TWELVEDATA_API_KEY')
         finnhub_key = self.config.get('finnhub', {}).get('api_key') or os.getenv('FINNHUB_API_KEY')
         oanda_key = self.config.get('oanda', {}).get('api_key') or os.getenv('OANDA_API_KEY')
         oanda_account_type = self.config.get('oanda', {}).get('account_type', 'practice')
         data_source = self.config.get('data', {}).get('data_source', 'auto')
+
+        # Load TwelveData API keys (supports multiple keys with rotation)
+        api_keys = load_api_keys_from_config(self.config)
+
+        # Setup API key rotation if multiple keys available
+        api_key_provider = None
+        self.api_key_rotator = None
+
+        if len(api_keys) > 1:
+            # Create API key rotator for multiple keys
+            rate_limiting = self.config.get('scheduler', {}).get('rate_limiting', {})
+            self.api_key_rotator = APIKeyRotator(
+                api_keys=api_keys,
+                max_per_day=rate_limiting.get('max_calls_per_day', 800),
+                max_per_minute=rate_limiting.get('max_calls_per_minute', 8)
+            )
+            api_key_provider = self.api_key_rotator.get_current_key
+            logger.info(f"✅ Using API Key Rotation with {len(api_keys)} keys for GUI")
+            logger.info(f"   Total daily capacity: {len(api_keys) * 800} calls/day")
+        elif len(api_keys) == 1:
+            # Single key mode
+            logger.info("✅ Using single TwelveData API key for GUI")
+        else:
+            logger.info("ℹ️  No TwelveData API keys configured - using fallback data sources")
 
         # Initialize components
         self.data_fetcher = ForexDataFetcher(
             cache_dir='data/cache',
             cache_duration_minutes=self.config['data'].get('cache_duration_minutes', 60),
             data_source=data_source,
-            twelvedata_api_key=twelvedata_key,
+            twelvedata_api_key=api_keys[0] if api_keys else None,
+            twelvedata_api_key_provider=api_key_provider,
             finnhub_api_key=finnhub_key,
             oanda_api_key=oanda_key,
             oanda_account_type=oanda_account_type
@@ -63,12 +90,58 @@ class ForexAnalyzer:
         self.ml_model = ForexMLModel(self.config)
         self.risk_manager = RiskManager(self.config)
 
+        # Initialize databases
+        self.signals_db = SignalsDB('data/signals.db')
+        self.analysis_db = AnalysisDB('data/analysis.db')
+
         # Try to load pre-trained model
         if os.path.exists('models/forex_model.pkl'):
             self.ml_model.load('models/forex_model.pkl')
             logger.info("Loaded pre-trained ML model")
         else:
             logger.info("No pre-trained model found")
+
+    def _record_api_call(self):
+        """Record an API call to the rotator (if using rotation)"""
+        if self.api_key_rotator:
+            self.api_key_rotator.record_call()
+
+    def _check_api_limit(self) -> tuple[bool, str]:
+        """Check if we can make an API call (if using rotation)"""
+        if self.api_key_rotator:
+            return self.api_key_rotator.can_make_call()
+        return True, "OK"
+
+    def get_api_usage_report(self) -> str:
+        """Get API usage report (if using rotation)"""
+        if self.api_key_rotator:
+            return self.api_key_rotator.get_usage_report()
+        else:
+            return "API key rotation not enabled (single key or no keys configured)"
+
+    def preload_cache(self, symbols: list = None, timeframes: list = None) -> Dict:
+        """
+        Preload data into in-memory cache on application startup
+
+        Args:
+            symbols: List of symbols to preload (defaults to config currency_pairs)
+            timeframes: List of timeframes to preload (defaults to config timeframes)
+
+        Returns:
+            Dictionary with preload statistics
+        """
+        # Use config defaults if not specified
+        if symbols is None:
+            symbols = self.config.get('currency_pairs', [])
+        if timeframes is None:
+            timeframes = self.config.get('timeframes', ['1d', '4h', '1h', '15m'])
+
+        logger.info("🚀 Starting data preload on application startup...")
+        return self.data_fetcher.preload_data(symbols, timeframes)
+
+    def get_cache_stats(self) -> Dict:
+        """Get in-memory cache statistics"""
+        return self.data_fetcher.get_cache_stats()
 
     def analyze_pair(
         self,
@@ -92,6 +165,14 @@ class ForexAnalyzer:
         # Fetch data for all timeframes
         timeframes = self.config.get('timeframes', ['1d', '4h', '1h', '15m'])
         data = self.data_fetcher.fetch_multiple_timeframes(symbol, timeframes)
+
+        # Record API calls if using TwelveData and rotation is enabled
+        # Note: Each timeframe fetch is typically one API call
+        if self.api_key_rotator and self.data_fetcher.twelvedata_fetcher:
+            # Record one call per timeframe fetched
+            for _ in range(len(data)):
+                self._record_api_call()
+            logger.debug(f"Recorded {len(data)} API calls for {symbol}")
 
         if not data:
             logger.error(f"Failed to fetch data for {symbol}")
@@ -168,7 +249,86 @@ class ForexAnalyzer:
             'timeframe_analyses': mtf_analysis
         }
 
+        # Save signals to database for each timeframe
+        self._save_signals_to_db(symbol, current_price, mtf_analysis, multi_tf_trade_plans)
+
+        # Save analysis results to database
+        for tf, tf_analysis in mtf_analysis.items():
+            self.analysis_db.store_analysis(
+                asset_symbol=symbol,
+                timeframe=tf,
+                analysis_data=result
+            )
+
         return result
+
+    def _save_signals_to_db(
+        self,
+        symbol: str,
+        current_price: float,
+        mtf_analysis: Dict,
+        multi_tf_trade_plans: Dict = None
+    ):
+        """
+        Save trading signals to database
+
+        Args:
+            symbol: Asset symbol
+            current_price: Current market price
+            mtf_analysis: Multi-timeframe analysis dictionary
+            multi_tf_trade_plans: Multi-timeframe trade plans
+        """
+        try:
+            # Process each timeframe
+            for tf, tf_analysis in mtf_analysis.items():
+                # Get enhanced signal (this is the final signal after all filters)
+                signal_type = tf_analysis.get('enhanced_signal', 'HOLD')
+
+                # Only save BUY and SELL signals (skip HOLD)
+                if signal_type in ['BUY', 'SELL']:
+                    strength_level = tf_analysis.get('signal_confidence', 0.5)
+
+                    # Get trade plan for this timeframe if available
+                    entry_points = None
+                    take_profits = None
+                    stop_losses = None
+                    risk_metrics = None
+
+                    if multi_tf_trade_plans and multi_tf_trade_plans.get('approved'):
+                        tf_plan = multi_tf_trade_plans.get('timeframe_plans', {}).get(tf)
+                        if tf_plan:
+                            entry_points = tf_plan.get('entry_points', {})
+                            take_profits = tf_plan.get('take_profits', {})
+                            stop_losses = tf_plan.get('stop_losses', {})
+                            risk_metrics = {
+                                'risk_reward_ratio': tf_plan.get('risk_reward_ratios', {}).get('tp2_conservative'),
+                                'risk_percentage': stop_losses.get('standard_2atr', {}).get('risk_pct') if stop_losses else None
+                            }
+
+                    # Build context dictionary
+                    context = {
+                        'trend_direction': tf_analysis.get('momentum', 'NEUTRAL'),
+                        'momentum': tf_analysis.get('trend_momentum', {}).get('trend_direction', 'NEUTRAL'),
+                        'reversal_detected': tf_analysis.get('reversal_detection', {}).get('is_reversal', False),
+                        'reversal_type': tf_analysis.get('reversal_detection', {}).get('reversal_type')
+                    }
+
+                    # Save to database
+                    self.signals_db.store_signal(
+                        asset_symbol=symbol,
+                        timeframe=tf,
+                        signal_type=signal_type,
+                        strength_level=strength_level,
+                        current_price=current_price,
+                        entry_points=entry_points,
+                        take_profits=take_profits,
+                        stop_losses=stop_losses,
+                        risk_metrics=risk_metrics,
+                        context=context
+                    )
+
+        except Exception as e:
+            logger.error(f"Error saving signals to database: {e}")
 
     def train_model(self, symbol: str = 'EURUSD=X', save_path: str = 'models/forex_model.pkl'):
         """

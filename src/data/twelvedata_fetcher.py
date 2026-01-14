@@ -34,6 +34,7 @@ class TwelveDataFetcher:
 
     # Symbol mapping (Yahoo Finance to Twelve Data format)
     SYMBOL_MAP = {
+        # Forex Pairs
         'EURUSD=X': 'EUR/USD',
         'GBPUSD=X': 'GBP/USD',
         'USDJPY=X': 'USD/JPY',
@@ -44,27 +45,46 @@ class TwelveDataFetcher:
         'EURJPY=X': 'EUR/JPY',
         'GBPJPY=X': 'GBP/JPY',
         'EURGBP=X': 'EUR/GBP',
-        # Gold and Silver
+        # Commodities (Gold and Silver)
         'XAUUSD=X': 'XAU/USD',
         'XAGUSD=X': 'XAG/USD',
         'XAU_USD': 'XAU/USD',
         'XAG_USD': 'XAG/USD',
         'GC=F': 'XAU/USD',
         'SI=F': 'XAG/USD',
+        # US Indices
+        'US30': 'US30',        # Dow Jones (Twelve Data native symbol)
+        'US100': 'USTEC',      # NASDAQ 100 (Twelve Data symbol)
+        '^DJI': 'US30',        # Yahoo Finance Dow Jones
+        '^NDX': 'USTEC',       # Yahoo Finance NASDAQ 100
+        '^IXIC': 'NASDAQ',     # NASDAQ Composite
+        # Cryptocurrencies
+        'BTC/USD': 'BTC/USD',
+        'ETH/USD': 'ETH/USD',
+        'BTC-USD': 'BTC/USD',  # Yahoo Finance format
+        'ETH-USD': 'ETH/USD',  # Yahoo Finance format
     }
 
-    def __init__(self, api_key: str, min_request_interval: float = 10.0):
+    def __init__(self, api_key=None, api_key_provider=None, min_request_interval: float = 10.0):
         """
         Initialize Twelve Data fetcher
 
         Args:
             api_key: Twelve Data API key (get from https://twelvedata.com)
+            api_key_provider: Optional callable that returns the current API key (for rotation)
             min_request_interval: Minimum seconds between API calls (default: 10)
         """
         self.api_key = api_key
+        self.api_key_provider = api_key_provider
         self.session = requests.Session()
         self.min_request_interval = min_request_interval
         self.last_request_time = 0
+
+    def _get_api_key(self) -> str:
+        """Get the current API key (supports dynamic rotation)"""
+        if self.api_key_provider:
+            return self.api_key_provider()
+        return self.api_key
 
     def _rate_limit(self):
         """
@@ -159,7 +179,7 @@ class TwelveDataFetcher:
                 'symbol': td_symbol,
                 'interval': interval,
                 'outputsize': min(limit, 5000),  # Max 5000
-                'apikey': self.api_key
+                'apikey': self._get_api_key()
             }
 
             logger.info(f"Fetching {symbol} ({td_symbol}) {timeframe} from Twelve Data")
@@ -246,7 +266,7 @@ class TwelveDataFetcher:
             url = f"{self.BASE_URL}/quote"
             params = {
                 'symbol': td_symbol,
-                'apikey': self.api_key
+                'apikey': self._get_api_key()
             }
 
             # Rate limit before making request

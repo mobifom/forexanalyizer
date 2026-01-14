@@ -99,13 +99,13 @@ class TrendMomentumAnalyzer:
         }
 
     @staticmethod
-    def detect_reversal(df: pd.DataFrame, recent_lookback: int = 5, historical_lookback: int = 20) -> Dict:
+    def detect_reversal(df: pd.DataFrame, recent_lookback: int = 3, historical_lookback: int = 20) -> Dict:
         """
         Detect if there's a potential reversal from a strong trend
 
         Args:
             df: DataFrame with OHLCV data
-            recent_lookback: Recent candles to check for reversal (default 5)
+            recent_lookback: Recent candles to check for reversal (default 3 for faster detection)
             historical_lookback: Historical candles to establish trend (default 20)
 
         Returns:
@@ -294,8 +294,8 @@ class TrendMomentumAnalyzer:
         # Calculate momentum
         momentum = TrendMomentumAnalyzer.calculate_trend_momentum(df, lookback=20)
 
-        # Detect reversals
-        reversal = TrendMomentumAnalyzer.detect_reversal(df, recent_lookback=5, historical_lookback=20)
+        # Detect reversals (use 3 candles for faster detection)
+        reversal = TrendMomentumAnalyzer.detect_reversal(df, recent_lookback=3, historical_lookback=20)
 
         # Calculate weighted signal
         final_signal, confidence, reasoning = TrendMomentumAnalyzer.calculate_weighted_signal(

@@ -110,29 +110,71 @@ if 'analysis_result' not in st.session_state:
 if 'current_symbol' not in st.session_state:
     st.session_state.current_symbol = None
 
-# Preload data cache on first run (only once per session)
-if not st.session_state.get('cache_preloaded', False):
-    with st.spinner('🚀 Preloading market data into cache... Please wait...'):
+
+def _check_cache_exists() -> bool:
+    """Check if file cache already has data (avoids unnecessary preloading on new sessions)"""
+    import os
+    from datetime import datetime, timedelta
+
+    cache_dir = 'data/cache'
+    if not os.path.exists(cache_dir):
+        return False
+
+    # Check if we have any recent cache files (less than 4 hours old)
+    cache_files = [f for f in os.listdir(cache_dir) if f.endswith('.pkl')]
+    if not cache_files:
+        return False
+
+    # Check if at least some files are fresh
+    fresh_count = 0
+    max_age = timedelta(hours=4)
+
+    for cache_file in cache_files[:10]:  # Check first 10 files
+        cache_path = os.path.join(cache_dir, cache_file)
         try:
-            # Get symbols from config
-            config = st.session_state.analyzer.config
-            symbols_to_preload = config.get('currency_pairs', [])[:4]  # Limit to first 4 to avoid long startup
-            timeframes_to_preload = ['1d', '4h', '1h', '15m']
+            file_time = datetime.fromtimestamp(os.path.getmtime(cache_path))
+            if datetime.now() - file_time < max_age:
+                fresh_count += 1
+        except Exception:
+            pass
 
-            preload_stats = st.session_state.analyzer.preload_cache(
-                symbols=symbols_to_preload,
-                timeframes=timeframes_to_preload
-            )
+    # If we have at least 4 fresh cache files, skip preloading
+    return fresh_count >= 4
 
-            st.session_state.cache_preloaded = True
-            st.session_state.preload_stats = preload_stats
 
-            # Log success
-            if preload_stats['success'] > 0:
-                logger.info(f"✨ Cache preloaded: {preload_stats['success']} items loaded, {preload_stats['failed']} failed")
-        except Exception as e:
-            logger.error(f"Error preloading cache: {e}")
-            st.session_state.cache_preloaded = True  # Mark as attempted to avoid retrying
+# Preload data cache on first run (only if no fresh cache exists)
+if not st.session_state.get('cache_preloaded', False):
+    # First check if cache files already exist (from previous sessions or batch jobs)
+    cache_exists = _check_cache_exists()
+
+    if cache_exists:
+        # Cache files exist - skip API preloading, just mark as done
+        logger.info("📁 Existing cache files found - skipping API preload (new browser session)")
+        st.session_state.cache_preloaded = True
+        st.session_state.preload_stats = {'success': 0, 'failed': 0, 'skipped': True, 'reason': 'Cache files exist'}
+    else:
+        # No cache - need to preload from API
+        with st.spinner('🚀 Preloading market data into cache... Please wait...'):
+            try:
+                # Get symbols from config
+                config = st.session_state.analyzer.config
+                symbols_to_preload = config.get('currency_pairs', [])[:4]  # Limit to first 4 to avoid long startup
+                timeframes_to_preload = ['1d', '4h', '1h', '15m']
+
+                preload_stats = st.session_state.analyzer.preload_cache(
+                    symbols=symbols_to_preload,
+                    timeframes=timeframes_to_preload
+                )
+
+                st.session_state.cache_preloaded = True
+                st.session_state.preload_stats = preload_stats
+
+                # Log success
+                if preload_stats['success'] > 0:
+                    logger.info(f"✨ Cache preloaded: {preload_stats['success']} items loaded, {preload_stats['failed']} failed")
+            except Exception as e:
+                logger.error(f"Error preloading cache: {e}")
+                st.session_state.cache_preloaded = True  # Mark as attempted to avoid retrying
 
 def create_candlestick_chart(df, symbol, timeframe):
     """Create an interactive candlestick chart with indicators"""

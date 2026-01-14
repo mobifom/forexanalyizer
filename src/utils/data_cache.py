@@ -13,12 +13,12 @@ logger = logging.getLogger(__name__)
 class DataCache:
     """Manages in-memory cache for market data"""
 
-    def __init__(self, cache_duration_minutes: int = 15):
+    def __init__(self, cache_duration_minutes: int = 60):
         """
         Initialize data cache
 
         Args:
-            cache_duration_minutes: How long to keep cached data (default 15 minutes)
+            cache_duration_minutes: How long to keep cached data (default 60 minutes)
         """
         self.cache = {}
         self.cache_duration = timedelta(minutes=cache_duration_minutes)

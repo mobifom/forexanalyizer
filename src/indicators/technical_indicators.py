@@ -348,7 +348,7 @@ class SignalGenerator:
     @staticmethod
     def rsi_signal(df: pd.DataFrame, overbought: int = 70, oversold: int = 30) -> str:
         """
-        Generate signal based on RSI
+        Generate signal based on RSI - SYMMETRIC logic for BUY and SELL
 
         Args:
             df: DataFrame with RSI
@@ -363,29 +363,49 @@ class SignalGenerator:
 
         rsi_current = df['RSI'].iloc[-1]
         rsi_prev = df['RSI'].iloc[-2]
+        rsi_change = rsi_current - rsi_prev
 
-        # Strong signals: crossing thresholds
-        # Oversold to normal (bullish)
+        # Calculate symmetric thresholds from center (50)
+        # oversold = 30 means 20 below center, overbought = 70 means 20 above center
+        center = 50
+        lower_zone = center - (center - oversold)  # = oversold (30)
+        upper_zone = center + (overbought - center)  # = overbought (70)
+
+        # TIER 1: Strong signals - crossing OUT of extreme zones
+        # BUY: Crossing up from oversold zone
         if rsi_prev < oversold and rsi_current >= oversold:
             return 'BUY'
-        # Overbought to normal (bearish)
-        elif rsi_prev > overbought and rsi_current <= overbought:
+        # SELL: Crossing down from overbought zone (SYMMETRIC)
+        if rsi_prev > overbought and rsi_current <= overbought:
             return 'SELL'
 
-        # Moderate signals: current position with momentum
-        # In oversold zone and rising
-        if rsi_current < oversold and rsi_current > rsi_prev:
+        # TIER 2: Moderate signals - in extreme zone with confirming momentum
+        # BUY: In oversold zone AND rising
+        if rsi_current < oversold and rsi_change > 0:
             return 'BUY'
-        # In overbought zone and falling
-        elif rsi_current > overbought and rsi_current < rsi_prev:
+        # SELL: In overbought zone AND falling (SYMMETRIC)
+        if rsi_current > overbought and rsi_change < 0:
             return 'SELL'
 
-        # Weaker signals: neutral zone with strong momentum
-        # RSI rising in lower half (potential uptrend)
-        elif rsi_current < 50 and rsi_current > rsi_prev + 2:
+        # TIER 3: Weaker signals - approaching extreme zones with momentum
+        # Use symmetric distance from center (45 = 5 below center, 55 = 5 above center)
+        lower_approach = center - 5  # 45
+        upper_approach = center + 5  # 55
+        momentum_threshold = 2  # Same for both directions
+
+        # BUY: Below center AND strong upward momentum
+        if rsi_current < lower_approach and rsi_change > momentum_threshold:
             return 'BUY'
-        # RSI falling in upper half (potential downtrend)
-        elif rsi_current > 50 and rsi_current < rsi_prev - 2:
+        # SELL: Above center AND strong downward momentum (SYMMETRIC)
+        if rsi_current > upper_approach and rsi_change < -momentum_threshold:
+            return 'SELL'
+
+        # TIER 4: Trend continuation signals - crossing center line with momentum
+        # BUY: Crossing above center with momentum
+        if rsi_prev < center and rsi_current >= center and rsi_change > 1:
+            return 'BUY'
+        # SELL: Crossing below center with momentum (SYMMETRIC)
+        if rsi_prev > center and rsi_current <= center and rsi_change < -1:
             return 'SELL'
 
         return 'HOLD'
@@ -393,7 +413,7 @@ class SignalGenerator:
     @staticmethod
     def macd_signal(df: pd.DataFrame) -> str:
         """
-        Generate signal based on MACD crossover
+        Generate signal based on MACD crossover - SYMMETRIC logic for BUY and SELL
 
         Args:
             df: DataFrame with MACD indicators
@@ -411,20 +431,39 @@ class SignalGenerator:
         hist_current = df['MACD_Hist'].iloc[-1]
         hist_prev = df['MACD_Hist'].iloc[-2]
 
-        # Strong signals: crossovers
-        # Bullish crossover
+        # Calculate histogram momentum
+        hist_momentum = hist_current - hist_prev
+
+        # TIER 1: Strong signals - MACD/Signal line crossovers
+        # BUY: MACD crosses above signal line
         if macd_prev <= signal_prev and macd_current > signal_current:
             return 'BUY'
-        # Bearish crossover
-        elif macd_prev >= signal_prev and macd_current < signal_current:
+        # SELL: MACD crosses below signal line (SYMMETRIC)
+        if macd_prev >= signal_prev and macd_current < signal_current:
             return 'SELL'
 
-        # Moderate signals: current position with strengthening histogram
-        # MACD above signal and histogram increasing
-        if macd_current > signal_current and hist_current > hist_prev:
+        # TIER 2: Zero line crossovers (trend change)
+        # BUY: MACD crosses above zero
+        if macd_prev <= 0 and macd_current > 0:
             return 'BUY'
-        # MACD below signal and histogram decreasing (more negative)
-        elif macd_current < signal_current and hist_current < hist_prev:
+        # SELL: MACD crosses below zero (SYMMETRIC)
+        if macd_prev >= 0 and macd_current < 0:
+            return 'SELL'
+
+        # TIER 3: Histogram momentum with position confirmation
+        # BUY: MACD above signal AND histogram increasing (strengthening bullish)
+        if macd_current > signal_current and hist_momentum > 0:
+            return 'BUY'
+        # SELL: MACD below signal AND histogram decreasing (strengthening bearish - SYMMETRIC)
+        if macd_current < signal_current and hist_momentum < 0:
+            return 'SELL'
+
+        # TIER 4: Strong histogram reversal (early signal)
+        # BUY: Histogram was negative but now increasing strongly
+        if hist_prev < 0 and hist_current < 0 and hist_momentum > abs(hist_prev) * 0.3:
+            return 'BUY'
+        # SELL: Histogram was positive but now decreasing strongly (SYMMETRIC)
+        if hist_prev > 0 and hist_current > 0 and hist_momentum < -abs(hist_prev) * 0.3:
             return 'SELL'
 
         return 'HOLD'
@@ -432,7 +471,7 @@ class SignalGenerator:
     @staticmethod
     def stochastic_signal(df: pd.DataFrame, overbought: int = 80, oversold: int = 20) -> str:
         """
-        Generate signal based on Stochastic Oscillator
+        Generate signal based on Stochastic Oscillator - SYMMETRIC logic for BUY and SELL
 
         Args:
             df: DataFrame with Stochastic indicators
@@ -450,28 +489,40 @@ class SignalGenerator:
         k_prev = df['Stoch_K'].iloc[-2]
         d_prev = df['Stoch_D'].iloc[-2]
 
-        # Strong signals: K crosses D in extreme zones
-        # Bullish: K crosses above D in oversold zone
+        # Calculate momentum
+        k_momentum = k_current - k_prev
+        center = 50
+
+        # TIER 1: Strong signals - K crosses D in extreme zones
+        # BUY: K crosses above D in oversold zone
         if k_prev <= d_prev and k_current > d_current and k_current < oversold:
             return 'BUY'
-        # Bearish: K crosses below D in overbought zone
-        elif k_prev >= d_prev and k_current < d_current and k_current > overbought:
+        # SELL: K crosses below D in overbought zone (SYMMETRIC)
+        if k_prev >= d_prev and k_current < d_current and k_current > overbought:
             return 'SELL'
 
-        # Moderate signals: In extreme zones
-        # In oversold zone and K above D (bullish setup)
+        # TIER 2: Moderate signals - In extreme zones with K/D alignment
+        # BUY: In oversold zone AND K above D
         if k_current < oversold and k_current > d_current:
             return 'BUY'
-        # In overbought zone and K below D (bearish setup)
-        elif k_current > overbought and k_current < d_current:
+        # SELL: In overbought zone AND K below D (SYMMETRIC)
+        if k_current > overbought and k_current < d_current:
             return 'SELL'
 
-        # Weaker signals: General position
-        # K above D and both rising from lower levels
-        if k_current > d_current and k_current > k_prev and k_current < 50:
+        # TIER 3: Crossing out of extreme zones
+        # BUY: Crossing UP from oversold zone
+        if k_prev < oversold and k_current >= oversold and k_momentum > 0:
             return 'BUY'
-        # K below D and both falling from upper levels
-        elif k_current < d_current and k_current < k_prev and k_current > 50:
+        # SELL: Crossing DOWN from overbought zone (SYMMETRIC)
+        if k_prev > overbought and k_current <= overbought and k_momentum < 0:
+            return 'SELL'
+
+        # TIER 4: Weaker signals - Below/above center with momentum and K/D alignment
+        # BUY: Below center, K above D, and K rising
+        if k_current < center and k_current > d_current and k_momentum > 0:
+            return 'BUY'
+        # SELL: Above center, K below D, and K falling (SYMMETRIC)
+        if k_current > center and k_current < d_current and k_momentum < 0:
             return 'SELL'
 
         return 'HOLD'

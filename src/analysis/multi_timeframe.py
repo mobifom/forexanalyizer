@@ -83,9 +83,9 @@ class MultiTimeframeAnalyzer:
             # NEW: Calculate trend momentum from historical candles
             trend_momentum = TrendMomentumAnalyzer.calculate_trend_momentum(df, lookback=20)
 
-            # NEW: Detect potential reversals
+            # NEW: Detect potential reversals (use 3 candles for faster detection)
             reversal_detection = TrendMomentumAnalyzer.detect_reversal(
-                df, recent_lookback=5, historical_lookback=20
+                df, recent_lookback=3, historical_lookback=20
             )
 
             # Get current consensus signal from indicators
@@ -228,6 +228,103 @@ class MultiTimeframeAnalyzer:
 
         return results
 
+    def _check_signal_stability(self, analysis: Dict, min_candles: int = 2) -> Dict:
+        """
+        Check if signal has been stable (same direction) for recent candles
+
+        Args:
+            analysis: Analysis dictionary containing dataframe and signals
+            min_candles: Minimum candles signal must be stable for
+
+        Returns:
+            Dictionary with stability info
+        """
+        df = analysis.get('dataframe')
+        if df is None or len(df) < min_candles + 2:
+            return {'is_stable': True, 'stable_candles': 0, 'reason': 'Insufficient data'}
+
+        current_signal = analysis.get('enhanced_signal', 'HOLD')
+        if current_signal == 'HOLD':
+            return {'is_stable': True, 'stable_candles': 0, 'reason': 'HOLD signal'}
+
+        # Check trend momentum consistency over recent candles
+        trend_momentum = analysis.get('trend_momentum', {})
+        momentum_direction = trend_momentum.get('direction', 'NEUTRAL')
+
+        # Signal should align with momentum direction
+        signal_momentum_aligned = (
+            (current_signal == 'BUY' and momentum_direction == 'BULLISH') or
+            (current_signal == 'SELL' and momentum_direction == 'BEARISH')
+        )
+
+        # Check candle direction consistency
+        recent_candles = df.iloc[-min_candles:]
+        bullish_candles = (recent_candles['Close'] > recent_candles['Open']).sum()
+        bearish_candles = (recent_candles['Close'] < recent_candles['Open']).sum()
+
+        candle_direction_stable = (
+            (current_signal == 'BUY' and bullish_candles >= min_candles - 1) or
+            (current_signal == 'SELL' and bearish_candles >= min_candles - 1)
+        )
+
+        # Signal is stable if momentum aligns AND candle direction supports it
+        is_stable = signal_momentum_aligned or candle_direction_stable
+
+        return {
+            'is_stable': is_stable,
+            'stable_candles': bullish_candles if current_signal == 'BUY' else bearish_candles,
+            'momentum_aligned': signal_momentum_aligned,
+            'candle_direction_stable': candle_direction_stable,
+            'reason': 'Stable' if is_stable else f'Signal conflicts with recent {min_candles} candles'
+        }
+
+    def _check_volume_confirmation(self, analysis: Dict, min_ratio: float = 1.0) -> Dict:
+        """
+        Check if current volume supports the signal (above average)
+
+        Args:
+            analysis: Analysis dictionary containing dataframe
+            min_ratio: Minimum volume ratio vs 20-period MA (default 1.0 = at least average)
+
+        Returns:
+            Dictionary with volume confirmation info
+        """
+        df = analysis.get('dataframe')
+        if df is None or 'Volume' not in df.columns or len(df) < 20:
+            return {'is_confirmed': True, 'volume_ratio': 1.0, 'reason': 'No volume data'}
+
+        current_volume = df['Volume'].iloc[-1]
+
+        # Use Volume_MA if available, otherwise calculate
+        if 'Volume_MA' in df.columns:
+            volume_ma = df['Volume_MA'].iloc[-1]
+        else:
+            volume_ma = df['Volume'].rolling(window=20).mean().iloc[-1]
+
+        if volume_ma == 0 or pd.isna(volume_ma):
+            return {'is_confirmed': True, 'volume_ratio': 1.0, 'reason': 'Invalid volume MA'}
+
+        volume_ratio = current_volume / volume_ma
+
+        # Volume is confirmed if current volume is at least min_ratio times the average
+        is_confirmed = volume_ratio >= min_ratio
+
+        # Also check if volume is increasing (supports momentum)
+        if len(df) >= 3:
+            recent_volumes = df['Volume'].iloc[-3:]
+            volume_increasing = recent_volumes.iloc[-1] > recent_volumes.iloc[0]
+        else:
+            volume_increasing = True
+
+        return {
+            'is_confirmed': is_confirmed,
+            'volume_ratio': round(volume_ratio, 2),
+            'volume_increasing': volume_increasing,
+            'current_volume': current_volume,
+            'average_volume': volume_ma,
+            'reason': 'Volume confirmed' if is_confirmed else f'Volume below average ({volume_ratio:.1%})'
+        }
+
     def _apply_signal_controls(self, analyses: Dict[str, Dict]) -> Dict[str, Dict]:
         """
         Apply enhanced signal controls to filter and adjust signals
@@ -282,6 +379,23 @@ class MultiTimeframeAnalyzer:
                 filtered_analysis['enhanced_signal'] = 'HOLD'
                 filtered_analysis['filtered_reason'] = f'Insufficient indicator agreement'
 
+            # 2.5 Signal debounce - check if signal is stable (same direction for 2+ candles)
+            debounce_settings = signal_control.get('debounce', {})
+            enable_debounce = debounce_settings.get('enabled', True)
+            min_stable_candles = debounce_settings.get('min_stable_candles', 2)
+
+            if enable_debounce and current_signal != 'HOLD':
+                signal_stability = self._check_signal_stability(analysis, min_stable_candles)
+                filtered_analysis['signal_stability'] = signal_stability
+
+                if not signal_stability['is_stable']:
+                    logger.info(f"{tf}: Signal not stable (need {min_stable_candles} candles), reducing confidence")
+                    # Reduce confidence for unstable signals instead of blocking completely
+                    filtered_analysis['signal_confidence'] *= 0.7
+                    if filtered_analysis['signal_confidence'] < min_confidence:
+                        filtered_analysis['enhanced_signal'] = 'HOLD'
+                        filtered_analysis['filtered_reason'] = 'Signal not stable (debounce filter)'
+
             # 3. Check momentum filter
             if momentum_settings.get('enable_momentum_filter', True):
                 min_momentum = momentum_settings.get('min_momentum_strength', 0.5)
@@ -307,9 +421,23 @@ class MultiTimeframeAnalyzer:
                         filtered_analysis['signal_confidence'] *= downgrade_factor
                         logger.info(f"{tf}: Reversal detected, confidence downgraded by {downgrade_factor}")
 
+            # 5. Volume confirmation - check if volume supports the signal
+            volume_settings = signal_control.get('volume', {})
+            enable_volume_check = volume_settings.get('enabled', True)
+
+            if enable_volume_check and current_signal != 'HOLD':
+                volume_check = self._check_volume_confirmation(analysis)
+                filtered_analysis['volume_confirmed'] = volume_check['is_confirmed']
+
+                if not volume_check['is_confirmed']:
+                    # Reduce confidence for low volume signals
+                    confidence_reduction = volume_settings.get('low_volume_penalty', 0.2)
+                    filtered_analysis['signal_confidence'] *= (1 - confidence_reduction)
+                    logger.info(f"{tf}: Low volume detected, confidence reduced by {confidence_reduction:.0%}")
+
             filtered_analyses[tf] = filtered_analysis
 
-        # 5. Apply higher timeframe confirmation requirements
+        # 6. Apply higher timeframe confirmation requirements
         if require_higher_tf:
             for tf, analysis in list(filtered_analyses.items()):
                 rule_key = f'{tf}_requires'
@@ -323,23 +451,43 @@ class MultiTimeframeAnalyzer:
                     continue  # No need to check if already HOLD
 
                 # Check if at least one required timeframe confirms
+                # IMPORTANT: Only exact signal match confirms (BUY confirms BUY, SELL confirms SELL)
+                # HOLD does NOT confirm - it means no clear direction from higher timeframe
                 confirmed = False
+                partial_confirm = False  # Track if higher TF is neutral (HOLD) but not opposite
+
                 for req_tf in required_tfs:
                     if req_tf in filtered_analyses:
                         req_signal = filtered_analyses[req_tf].get('enhanced_signal', 'HOLD')
-                        # Consider both exact match or at least not opposite
+
+                        # Exact match = full confirmation
                         if req_signal == current_signal:
                             confirmed = True
                             break
+                        # HOLD = partial (not opposite, but not confirming either)
                         elif req_signal == 'HOLD':
-                            # HOLD is neutral, can be partial confirmation
-                            confirmed = True  # Allow if not opposite
-                            break
+                            partial_confirm = True
+                            # Don't break - keep looking for exact match
 
                 if not confirmed:
-                    logger.info(f"{tf}: {current_signal} signal not confirmed by required timeframes {required_tfs}, setting to HOLD")
-                    filtered_analyses[tf]['enhanced_signal'] = 'HOLD'
-                    filtered_analyses[tf]['filtered_reason'] = f'No confirmation from {required_tfs}'
+                    if partial_confirm:
+                        # Higher TF is neutral - reduce confidence but allow signal if confidence is very high
+                        current_confidence = filtered_analyses[tf].get('signal_confidence', 0.5)
+                        if current_confidence >= 0.8:
+                            # Very high confidence signal - allow with reduced confidence
+                            filtered_analyses[tf]['signal_confidence'] *= 0.7
+                            filtered_analyses[tf]['filtered_reason'] = f'Partial confirmation (higher TF neutral)'
+                            logger.info(f"{tf}: {current_signal} partially confirmed (higher TF HOLD), confidence reduced")
+                        else:
+                            # Not high enough confidence to proceed without confirmation
+                            logger.info(f"{tf}: {current_signal} signal not confirmed (higher TF is HOLD), setting to HOLD")
+                            filtered_analyses[tf]['enhanced_signal'] = 'HOLD'
+                            filtered_analyses[tf]['filtered_reason'] = f'No confirmation from {required_tfs} (HOLD is not confirmation)'
+                    else:
+                        # Higher TF has opposite signal - definitely block
+                        logger.info(f"{tf}: {current_signal} signal blocked by opposite signal from {required_tfs}")
+                        filtered_analyses[tf]['enhanced_signal'] = 'HOLD'
+                        filtered_analyses[tf]['filtered_reason'] = f'Blocked by opposite signal from {required_tfs}'
 
         return filtered_analyses
 

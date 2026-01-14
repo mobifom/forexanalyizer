@@ -52,8 +52,8 @@ indicators:
 
 # Signal Confluence Settings
 confluence:
-  min_timeframes_agree: 2  # Minimum timeframes that must agree (2/4 = 50%)
-  min_confidence: 0.5      # Minimum confidence score (0-1) - 50%
+  min_timeframes_agree: 3  # Minimum timeframes that must agree (3/4 = 75%)
+  min_confidence: 0.6      # Minimum confidence score (0-1) - 60%
 
 # Enhanced Signal Control Settings
 signal_control:
@@ -109,6 +109,17 @@ signal_control:
     divergence_action: 'downgrade' # Options: 'ignore', 'downgrade', 'block'
     divergence_penalty: 0.3        # Reduce confidence by this amount when divergence detected
 
+  # Signal debounce (prevent whipsaw from rapid signal changes)
+  debounce:
+    enabled: true                  # Enable signal debounce filter
+    min_stable_candles: 2          # Signal must be stable for N candles before confirming
+
+  # Volume confirmation (validate signals with volume)
+  volume:
+    enabled: true                  # Enable volume confirmation check
+    low_volume_penalty: 0.2        # Reduce confidence by 20% for low volume signals
+    min_volume_ratio: 1.0          # Minimum volume ratio vs 20-period MA
+
 # ML Model Settings
 ml_model:
   train_test_split: 0.2
@@ -128,7 +139,8 @@ risk_management:
 data:
   historical_days: 365        # Days of historical data to fetch
   cache_enabled: true
-  cache_duration_minutes: 20  # 20 minutes auto-refresh (manual refresh bypasses cache)
+  cache_duration_minutes: 240 # 4 hours - longer for browser session persistence
+  file_cache_priority: true   # Load from file cache first on new browser sessions
   data_source: 'auto'         # Options: 'twelvedata', 'finnhub', 'yfinance', 'oanda', 'auto'
                               # 'auto' tries Twelve Data first (if configured), then Oanda, falls back to yfinance
                               # Use 'yfinance' if you don't have API keys

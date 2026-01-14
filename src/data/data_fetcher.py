@@ -60,7 +60,7 @@ class ForexDataFetcher:
     def __init__(
         self,
         cache_dir: str = 'data/cache',
-        cache_duration_minutes: int = 60,
+        cache_duration_minutes: int = 240,  # 4 hours - longer for browser session persistence
         data_source: str = 'yfinance',
         twelvedata_api_key: str = None,
         twelvedata_api_key_provider=None,
@@ -237,6 +237,12 @@ class ForexDataFetcher:
         """
         Fetch forex data for a given symbol and timeframe
 
+        Cache check order optimized for browser sessions:
+        1. In-memory cache (fastest, same session)
+        2. File cache (persistent, survives browser refresh)
+        3. Snapshot DB (scheduler data)
+        4. API fetch (last resort)
+
         Args:
             symbol: Forex pair symbol (e.g., 'EURUSD=X', 'EUR_USD')
             timeframe: Time interval ('1d', '4h', '1h', '15m')
@@ -247,13 +253,29 @@ class ForexDataFetcher:
         Returns:
             DataFrame with OHLCV data
         """
-        # Try to load from in-memory cache first (fastest)
+        cache_path = self._get_cache_path(symbol, timeframe)
+
+        # 1. Try in-memory cache first (fastest for same session)
         if use_cache and self.memory_cache:
             cached_data = self.memory_cache.get(symbol, timeframe)
             if cached_data is not None:
+                logger.debug(f"✅ {symbol} {timeframe} loaded from in-memory cache")
                 return cached_data
 
-        # Try to load from snapshot second (scheduler's latest data)
+        # 2. Try file cache (persistent across browser sessions - CRITICAL for new sessions)
+        if use_cache and self._is_cache_valid(cache_path):
+            try:
+                with open(cache_path, 'rb') as f:
+                    logger.info(f"📁 Loading {symbol} {timeframe} from file cache (browser session)")
+                    cached_df = pickle.load(f)
+                    # Update in-memory cache for faster subsequent access
+                    if self.memory_cache:
+                        self.memory_cache.set(symbol, timeframe, cached_df)
+                    return cached_df
+            except Exception as e:
+                logger.warning(f"File cache load failed: {e}")
+
+        # 3. Try snapshot DB (scheduler's batch job data)
         if use_snapshot and self.snapshots_db:
             max_age = max_snapshot_age_minutes if max_snapshot_age_minutes is not None else int(self.cache_duration.total_seconds() / 60)
 
@@ -268,22 +290,13 @@ class ForexDataFetcher:
                 # Update in-memory cache with snapshot data
                 if self.memory_cache:
                     self.memory_cache.set(symbol, timeframe, snapshot_data)
+                # Also save to file cache for future browser sessions
+                try:
+                    with open(cache_path, 'wb') as f:
+                        pickle.dump(snapshot_data, f)
+                except Exception as e:
+                    logger.warning(f"Failed to save snapshot to file cache: {e}")
                 return snapshot_data
-
-        cache_path = self._get_cache_path(symbol, timeframe)
-
-        # Try to load from file cache
-        if use_cache and self._is_cache_valid(cache_path):
-            try:
-                with open(cache_path, 'rb') as f:
-                    logger.info(f"Loading {symbol} {timeframe} from file cache")
-                    cached_df = pickle.load(f)
-                    # Update in-memory cache
-                    if self.memory_cache:
-                        self.memory_cache.set(symbol, timeframe, cached_df)
-                    return cached_df
-            except Exception as e:
-                logger.warning(f"Cache load failed: {e}")
 
         # Decide which data source to use
         df = None
@@ -343,18 +356,32 @@ class ForexDataFetcher:
         if df is None:
             df = self._fetch_from_yfinance(symbol, timeframe)
 
-        # Cache the data if successful
+        # Cache the data if successful (save to all cache layers for persistence)
         if df is not None and not df.empty and use_cache:
             # Update in-memory cache
             if self.memory_cache:
                 self.memory_cache.set(symbol, timeframe, df)
 
-            # Update file cache
+            # Update file cache (for browser session persistence)
             try:
                 with open(cache_path, 'wb') as f:
                     pickle.dump(df, f)
+                logger.debug(f"📁 Saved {symbol} {timeframe} to file cache")
             except Exception as e:
-                logger.warning(f"Failed to cache data: {e}")
+                logger.warning(f"Failed to save to file cache: {e}")
+
+            # Also save to snapshot DB (for cross-session persistence)
+            if self.snapshots_db:
+                try:
+                    self.snapshots_db.save_snapshot(
+                        asset_symbol=symbol,
+                        timeframe=timeframe,
+                        data=df,
+                        source='api_fetch'
+                    )
+                    logger.debug(f"📸 Saved {symbol} {timeframe} to snapshot DB")
+                except Exception as e:
+                    logger.warning(f"Failed to save to snapshot DB: {e}")
 
         return df
 
